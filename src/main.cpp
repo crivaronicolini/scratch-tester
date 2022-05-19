@@ -38,20 +38,27 @@ AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
 #define BACKCOLOR TFT_BLACK
 #define TEXTCOLOR TFT_WHITE
 
+// params menu
 int chooseField = 1;
+int exitMenuOptions = 0;
+int menuDelayTime = 100;
 
-int fuerzaInicial = 0;
-int fuerzaFinal = 0;
-int velocidad = 0;
+// params medicion
+int fuerzaInicial = 0; // N
+int fuerzaFinal = 0;   // N
+int velocidad = 0;     // mm x minuto
+int largo = 0;         // mm
 
-int maxSpeedX = 1000;
-int MAX_SPEED = 100;
+// params motores
+int maxSpeedX = 100;
+const int MICROSTEP = 16;
+
+// params tiempo
 int INPUT_READ_INTERVAL = 100;
 unsigned long last_input_time = 0;
 
+// params botones
 int joySW_status = 1;
-
-int exitMenuOptions = 0; // Forces the menu to exit and cut the copper tape
 
 // Declare the clickencoder
 // Disable doubleclicks in setup makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
@@ -61,8 +68,8 @@ ClickEncoderStream encStream(clickEncoder, 1);
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
 TFT_eSPI gfx = TFT_eSPI();
 
-void medir();             // Function to manually feed the tape without cutting
-void definirOrigen();     // Main loop that feeds tape and calls servoCuts()
+void medir();
+void definirOrigen();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 //////////////////////////////////////////////////////////
@@ -71,14 +78,14 @@ void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 result doMedir()
 {
-    delay(500);
+    delay(menuDelayTime);
     exitMenuOptions = 2;
     return proceed;
 }
 
 result doDefinirOrigen()
 {
-    delay(500);
+    delay(menuDelayTime);
     exitMenuOptions = 1;
     return proceed;
 }
@@ -91,16 +98,11 @@ result updateEEPROM()
 
 #define MAX_DEPTH 1
 
-// MENU(configuracion, "Configuracion", doNothing, noEvent, noStyle,
-//      //WIFI
-//      //Camara
-//      EXIT("<Back")
-//      );
-
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
      OP("Definir origen", doDefinirOrigen, enterEvent),
      OP("Medir!", doMedir, enterEvent)
      //  ,SUBMENU(configuracion)
@@ -189,7 +191,7 @@ void setup()
     //  nav.timeOut = 60;  // Timeout after 60 seconds of inactivity
     //  nav.idleOn(); // Start with the main screen and not the menu
 
-    stepperX.setMaxSpeed(1000);
+    stepperX.setMaxSpeed(maxSpeedX);
     pinMode(joySW, INPUT_PULLUP);
 }
 
@@ -205,13 +207,13 @@ void loop()
     {
     case 1:
     {
-        delay(500); // Pause to allow the button to come up
+        delay(menuDelayTime); // Pause to allow the button to come up
         definirOrigen();
         break;
     }
     case 2:
     {
-        delay(500); // Pause to allow the button to come up
+        delay(menuDelayTime); // Pause to allow the button to come up
         medir();
         break;
     }
@@ -227,7 +229,7 @@ void loop()
 void definirOrigen()
 {
     exitMenuOptions = 0; // Return to the menu
-    delay(500);
+    delay(menuDelayTime);
     while (digitalRead(joySW))
     {
         // Every INPUT_READ_INTERVAL milliseconds, read inputs.
@@ -239,16 +241,18 @@ void definirOrigen()
         if (current_time - last_input_time > INPUT_READ_INTERVAL)
         {
             int joyX_value = analogRead(joyX);
-            // Map the raw analog value to speed range from -MAX_SPEED to MAX_SPEED
-            int desired_speed = map(joyX_value, 0, 1023, -MAX_SPEED, MAX_SPEED);
+            // Map the raw analog value to speed range from -maxSpeedX to maxSpeedX
+            int desired_speed = map(joyX_value, 0, 1023, -maxSpeedX, maxSpeedX);
             // Serial.println(desired_speed);
 
             // Based on the input, set targets and max speed
             stepperX.setMaxSpeed(abs(desired_speed));
             if (desired_speed == 0 && stepperX.speed() == 0)
             {
-                // Prevent running off the end of the position range
-                stepperX.setCurrentPosition(0);
+                // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
+                // stepperX.setCurrentPosition(0);
+                Serial.print("Posicion = ");
+                Serial.println(stepperX.currentPosition());
             }
             else if (desired_speed < 0)
             {
@@ -270,8 +274,10 @@ void definirOrigen()
 void medir()
 {
     exitMenuOptions = 0; // Return to the menu
-    delay(500);
-    // TODO
+    delay(menuDelayTime);
+    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    stepperX.move(mm2step(largo));
+    stepperX.runSpeedToPosition();
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
 
@@ -280,3 +286,8 @@ void IRAM_ATTR onTimer()
 {
     clickEncoder.service();
 }
+
+float mm2step(float mm) { return mm * MICROSTEP * 100; }
+float step2mm(float step) { return step / (MICROSTEP * 100); }
+float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
+float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
