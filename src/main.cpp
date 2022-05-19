@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include <TFT_eFEX.h>
 
 #include <menu.h>
 #include <menuIO/TFT_eSPIOut.h>
@@ -32,7 +33,6 @@ using namespace Menu;
 
 #define stepX 17
 #define dirX 16
-AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -60,6 +60,8 @@ unsigned long last_input_time = 0;
 // params botones
 int joySW_status = 1;
 
+AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
+
 // Declare the clickencoder
 // Disable doubleclicks in setup makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
 ClickEncoder clickEncoder = ClickEncoder(encA, encB, encBtn, encSteps);
@@ -67,10 +69,17 @@ ClickEncoderStream encStream(clickEncoder, 1);
 
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
 TFT_eSPI gfx = TFT_eSPI();
+TFT_eFEX fex = TFT_eFEX(&gfx);
 
 void medir();
+void medirProgreso();
 void definirOrigen();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
+
+float mm2step(float mm) { return mm * MICROSTEP * 100; }
+float step2mm(float step) { return step / (MICROSTEP * 100); }
+float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
+float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 
 //////////////////////////////////////////////////////////
 // Start ArduinoMenu
@@ -80,6 +89,13 @@ result doMedir()
 {
     delay(menuDelayTime);
     exitMenuOptions = 2;
+    return proceed;
+}
+
+result doMedirProgreso()
+{
+    delay(menuDelayTime);
+    exitMenuOptions = 3;
     return proceed;
 }
 
@@ -104,7 +120,8 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
      OP("Definir origen", doDefinirOrigen, enterEvent),
-     OP("Medir!", doMedir, enterEvent)
+     OP("Medir!", doMedir, enterEvent),
+     OP("Medir con progreso", doMedirProgreso, enterEvent)
      //  ,SUBMENU(configuracion)
 );
 
@@ -207,14 +224,20 @@ void loop()
     {
     case 1:
     {
-        delay(menuDelayTime); // Pause to allow the button to come up
+        delay(menuDelayTime);
         definirOrigen();
         break;
     }
     case 2:
     {
-        delay(menuDelayTime); // Pause to allow the button to come up
+        delay(menuDelayTime);
         medir();
+        break;
+    }
+    case 3:
+    {
+        delay(menuDelayTime);
+        medirProgreso();
         break;
     }
     default: // Do the normal program functions with ArduinoMenu
@@ -228,7 +251,8 @@ void loop()
 
 void definirOrigen()
 {
-    exitMenuOptions = 0; // Return to the menu
+    exitMenuOptions = 0;
+    // Return to the menu
     delay(menuDelayTime);
     while (digitalRead(joySW))
     {
@@ -264,9 +288,6 @@ void definirOrigen()
             }
             last_input_time = current_time;
         }
-        // stepperX.moveTo(joyX_value);
-        // stepperX.setSpeed(100);
-        // stepperX.runSpeedToPosition();
     }
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
@@ -277,7 +298,29 @@ void medir()
     delay(menuDelayTime);
     stepperX.setSpeed(mmxm2stepxs(velocidad));
     stepperX.move(mm2step(largo));
-    stepperX.runSpeedToPosition();
+    stepperX.runToPosition();
+    mainMenu.dirty = true; // Force the main menu to redraw itself
+}
+
+void medirProgreso()
+{
+    exitMenuOptions = 0; // Return to the menu
+    delay(menuDelayTime);
+    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    stepperX.move(mm2step(largo));
+    float largoSteps = mm2step(largo);
+    last_input_time = 0;
+    unsigned long current_time = millis();
+    while (stepperX.distanceToGo() != 0)
+    {
+        if (current_time - last_input_time > 500)
+        {
+            float percent = 100 * stepperX.currentPosition() / largoSteps;
+            fex.drawProgressBar(10, 70, 20, 20, percent, TFT_DARKGREEN, TFT_DARKCYAN);
+            last_input_time = current_time;
+        }
+        stepperX.runSpeedToPosition();
+    }
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
 
@@ -286,8 +329,3 @@ void IRAM_ATTR onTimer()
 {
     clickEncoder.service();
 }
-
-float mm2step(float mm) { return mm * MICROSTEP * 100; }
-float step2mm(float step) { return step / (MICROSTEP * 100); }
-float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
-float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
