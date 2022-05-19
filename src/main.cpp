@@ -317,9 +317,9 @@ void medirProgreso()
     stepperX.setSpeed(mmxm2stepxs(velocidad));
     stepperX.move(largoSteps);
     last_input_time = 0;
-    unsigned long current_time = millis();
     while (stepperX.distanceToGo() != 0)
     {
+        unsigned long current_time = millis();
         if (current_time - last_input_time > 500)
         {
             float percent = 100 * stepperX.currentPosition() / largoSteps;
