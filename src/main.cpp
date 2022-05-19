@@ -167,8 +167,8 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 };
 
 // Define the width and height of the TFT and how much of it to take up
-#define GFX_WIDTH 135
-#define GFX_HEIGHT 240
+#define GFX_WIDTH 240
+#define GFX_HEIGHT 135
 #define fontW 6
 #define fontH 9
 
