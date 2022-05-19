@@ -296,9 +296,16 @@ void medir()
 {
     exitMenuOptions = 0; // Return to the menu
     delay(menuDelayTime);
+    float largoSteps = mm2step(largo);
     stepperX.setSpeed(mmxm2stepxs(velocidad));
-    stepperX.move(mm2step(largo));
+    stepperX.move(largoSteps);
     stepperX.runToPosition();
+    // volver a la posicion anterior
+    delay(menuDelayTime);
+    stepperX.setSpeed(maxSpeedX);
+    stepperX.move(-largoSteps);
+    stepperX.runToPosition();
+
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
 
@@ -306,9 +313,9 @@ void medirProgreso()
 {
     exitMenuOptions = 0; // Return to the menu
     delay(menuDelayTime);
-    stepperX.setSpeed(mmxm2stepxs(velocidad));
-    stepperX.move(mm2step(largo));
     float largoSteps = mm2step(largo);
+    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    stepperX.move(largoSteps);
     last_input_time = 0;
     unsigned long current_time = millis();
     while (stepperX.distanceToGo() != 0)
@@ -321,6 +328,10 @@ void medirProgreso()
         }
         stepperX.runSpeedToPosition();
     }
+    delay(menuDelayTime);
+    stepperX.setSpeed(maxSpeedX);
+    stepperX.move(-largoSteps);
+    stepperX.runToPosition();
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
 
