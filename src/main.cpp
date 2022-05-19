@@ -31,6 +31,9 @@ using namespace Menu;
 #define joyY 39
 #define joySW 34 // por ahi puedo usar el mismo pin que el encoder
 
+#define stopSW 35
+
+// motor pins
 #define stepX 17
 #define dirX 16
 
@@ -85,6 +88,13 @@ float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 // Start ArduinoMenu
 //////////////////////////////////////////////////////////
 
+result doDefinirOrigen()
+{
+    delay(menuDelayTime);
+    exitMenuOptions = 1;
+    return proceed;
+}
+
 result doMedir()
 {
     delay(menuDelayTime);
@@ -99,10 +109,10 @@ result doMedirProgreso()
     return proceed;
 }
 
-result doDefinirOrigen()
+result doHoming()
 {
     delay(menuDelayTime);
-    exitMenuOptions = 1;
+    exitMenuOptions = 4;
     return proceed;
 }
 
@@ -121,7 +131,8 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
      OP("Definir origen", doDefinirOrigen, enterEvent),
      OP("Medir!", doMedir, enterEvent),
-     OP("Medir con progreso", doMedirProgreso, enterEvent)
+     OP("Medir con progreso", doMedirProgreso, enterEvent),
+     OP("Homing", doHoming, enterEvent)
      //  ,SUBMENU(configuracion)
 );
 
@@ -240,6 +251,12 @@ void loop()
         medirProgreso();
         break;
     }
+    case 4:
+    {
+        delay(menuDelayTime);
+        homing();
+        break;
+    }
     default: // Do the normal program functions with ArduinoMenu
         if (now - lastMenuFrame >= menuFPS)
         {
@@ -332,9 +349,21 @@ void medirProgreso()
     stepperX.setSpeed(maxSpeedX);
     stepperX.move(-largoSteps);
     stepperX.runToPosition();
-    mainMenu.dirty = true; // Force the main menu to redraw itself
+    mainMenu.dirty = true;
 }
 
+void homing()
+{
+    exitMenuOptions = 0;
+    stepperX.setSpeed(maxSpeedX / 2);
+    stepperX.move(-mm2step(300));
+    while (digitalRead(stopSW))
+    {
+        stepperX.runSpeedToPosition();
+    }
+    stepperX.setCurrentPosition(0);
+    mainMenu.dirty = true;
+}
 // ESP32 timer
 void IRAM_ATTR onTimer()
 {
