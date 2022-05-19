@@ -1,0 +1,282 @@
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+
+#include <menu.h>
+#include <menuIO/TFT_eSPIOut.h>
+#include <streamFlow.h>
+#include <ClickEncoder.h>
+// Using this library: https://github.com/soligen2010/encoder.git
+#include <menuIO/clickEncoderIn.h>
+#include <menuIO/keyIn.h>
+#include <menuIO/chainStream.h>
+#include <menuIO/serialIO.h>
+// For debugging the TFT_eSPIOut.h library
+#include <menuIO/serialOut.h>
+#include <menuIO/serialIn.h>
+
+#include <AccelStepper.h>
+
+using namespace Menu;
+
+// Declare pins for rotary encoder
+#define encA 17
+#define encB 16
+#define encBtn 4
+// steps per detent
+#define encSteps 4
+
+// Declare pins for joystick
+#define joyX 36
+#define joyY 39
+#define joySW 34 // por ahi puedo usar el mismo pin que el encoder
+
+#define stepX 17
+#define dirX 16
+AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
+
+// Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
+#define BACKCOLOR TFT_BLACK
+#define TEXTCOLOR TFT_WHITE
+
+int chooseField = 1;
+
+int fuerzaInicial = 0;
+int fuerzaFinal = 0;
+int velocidad = 0;
+
+int maxSpeedX = 1000;
+int MAX_SPEED = 100;
+int INPUT_READ_INTERVAL = 100;
+unsigned long last_input_time = 0;
+
+int joySW_status = 1;
+
+int exitMenuOptions = 0; // Forces the menu to exit and cut the copper tape
+
+// Declare the clickencoder
+// Disable doubleclicks in setup makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
+ClickEncoder clickEncoder = ClickEncoder(encA, encB, encBtn, encSteps);
+ClickEncoderStream encStream(clickEncoder, 1);
+
+// TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
+TFT_eSPI gfx = TFT_eSPI();
+
+void medir();             // Function to manually feed the tape without cutting
+void definirOrigen();     // Main loop that feeds tape and calls servoCuts()
+void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
+
+//////////////////////////////////////////////////////////
+// Start ArduinoMenu
+//////////////////////////////////////////////////////////
+
+result doMedir()
+{
+    delay(500);
+    exitMenuOptions = 2;
+    return proceed;
+}
+
+result doDefinirOrigen()
+{
+    delay(500);
+    exitMenuOptions = 1;
+    return proceed;
+}
+
+result updateEEPROM()
+{
+    // writeEEPROM();
+    return quit;
+}
+
+#define MAX_DEPTH 1
+
+// MENU(configuracion, "Configuracion", doNothing, noEvent, noStyle,
+//      //WIFI
+//      //Camara
+//      EXIT("<Back")
+//      );
+
+MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
+     FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     OP("Definir origen", doDefinirOrigen, enterEvent),
+     OP("Medir!", doMedir, enterEvent)
+     //  ,SUBMENU(configuracion)
+);
+
+// define menu colors --------------------------------------------------------
+#define Black RGB565(0, 0, 0)
+#define Red RGB565(255, 0, 0)
+#define Green RGB565(0, 255, 0)
+#define Blue RGB565(0, 0, 255)
+#define Gray RGB565(128, 128, 128)
+#define LighterRed RGB565(255, 150, 150)
+#define LighterGreen RGB565(150, 255, 150)
+#define LighterBlue RGB565(150, 150, 255)
+#define LighterGray RGB565(211, 211, 211)
+#define DarkerRed RGB565(150, 0, 0)
+#define DarkerGreen RGB565(0, 150, 0)
+#define DarkerBlue RGB565(0, 0, 150)
+#define Cyan RGB565(0, 255, 255)
+#define Magenta RGB565(255, 0, 255)
+#define Yellow RGB565(255, 255, 0)
+#define White RGB565(255, 255, 255)
+#define DarkerOrange RGB565(255, 140, 0)
+
+// TFT color table
+const colorDef<uint16_t> colors[6] MEMMODE = {
+    //{{disabled normal,disabled selected},{enabled normal,enabled selected, enabled editing}}
+    {{(uint16_t)Black, (uint16_t)Black}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}},     // bgColor
+    {{(uint16_t)White, (uint16_t)White}, {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // fgColor
+    {{(uint16_t)Red, (uint16_t)Red}, {(uint16_t)Yellow, (uint16_t)Yellow, (uint16_t)Yellow}},  // valColor
+    {{(uint16_t)White, (uint16_t)White}, {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // unitColor
+    {{(uint16_t)White, (uint16_t)Gray}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)White}},    // cursorColor
+    {{(uint16_t)White, (uint16_t)Yellow}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}},    // titleColor
+};
+
+// Define the width and height of the TFT and how much of it to take up
+#define GFX_WIDTH 135
+#define GFX_HEIGHT 240
+#define fontW 6
+#define fontH 9
+
+const panel panels[] MEMMODE = {{0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}}; // Main menu panel
+navNode *nodes[sizeof(panels) / sizeof(panel)];                                 // navNodes to store navigation status
+panelsList pList(panels, nodes, sizeof(panels) / sizeof(panel));                // a list of panels and nodes
+// idx_t tops[MAX_DEPTH]={0,0}; // store cursor positions for each level
+idx_t eSpiTops[MAX_DEPTH] = {0};
+TFT_eSPIOut eSpiOut(gfx, colors, eSpiTops, pList, fontW, fontH + 1);
+idx_t serialTops[MAX_DEPTH] = {0};
+serialOut outSerial(Serial, serialTops);
+menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
+outputsList out(outputs, sizeof(outputs) / sizeof(menuOut *)); // outputs list
+serialIn serial(Serial);
+MENU_INPUTS(in, &encStream, &serial); // &encButton,
+NAVROOT(nav, mainMenu, MAX_DEPTH, in, out);
+
+// ESP32 timer thanks to: http://www.iotsharing.com/2017/06/how-to-use-interrupt-timer-in-arduino-esp32.html
+// and: https://techtutorialsx.com/2017/10/07/esp32-arduino-timer-interrupts/
+hw_timer_t *timer = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+//////////////////////////////////////////////////////////
+// End Arduino Menu
+//////////////////////////////////////////////////////////
+
+void setup()
+{
+    Serial.begin(115200);
+    delay(3000);
+
+    clickEncoder.setAccelerationEnabled(true);
+    clickEncoder.setDoubleClickEnabled(false); // Disable doubleclicks makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
+
+    // // ESP32 timer
+    timer = timerBegin(0, 80, true);
+    timerAttachInterrupt(timer, &onTimer, true);
+    timerAlarmWrite(timer, 1000, true);
+    timerAlarmEnable(timer);
+
+    gfx.init();         // Initialize the display
+    gfx.setRotation(0); // Set the rotation (0-3) to vertical
+    Serial.println("Initialized display");
+    gfx.fillScreen(TFT_BLACK);
+    Serial.println("done");
+
+    nav.showTitle = true; // Show titles in the menus and submenus
+    //  nav.timeOut = 60;  // Timeout after 60 seconds of inactivity
+    //  nav.idleOn(); // Start with the main screen and not the menu
+
+    stepperX.setMaxSpeed(1000);
+    pinMode(joySW, INPUT_PULLUP);
+}
+
+void loop()
+{
+    // Slow down the menu redraw rate
+    constexpr int menuFPS = 1000 / 30;
+    static unsigned long lastMenuFrame = -menuFPS;
+    unsigned long now = millis();
+    //... other stuff on loop, will keep executing
+
+    switch (exitMenuOptions)
+    {
+    case 1:
+    {
+        delay(500); // Pause to allow the button to come up
+        definirOrigen();
+        break;
+    }
+    case 2:
+    {
+        delay(500); // Pause to allow the button to come up
+        medir();
+        break;
+    }
+    default: // Do the normal program functions with ArduinoMenu
+        if (now - lastMenuFrame >= menuFPS)
+        {
+            lastMenuFrame = millis();
+            nav.poll(); // Poll the input devices
+        }
+    }
+}
+
+void definirOrigen()
+{
+    exitMenuOptions = 0; // Return to the menu
+    delay(500);
+    while (digitalRead(joySW))
+    {
+        // Every INPUT_READ_INTERVAL milliseconds, read inputs.
+        // We do this infrequently to prevent interfering
+        // with the stepper motor high speed stepping
+        // Get the current joystick position as analog value
+
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > INPUT_READ_INTERVAL)
+        {
+            int joyX_value = analogRead(joyX);
+            // Map the raw analog value to speed range from -MAX_SPEED to MAX_SPEED
+            int desired_speed = map(joyX_value, 0, 1023, -MAX_SPEED, MAX_SPEED);
+            // Serial.println(desired_speed);
+
+            // Based on the input, set targets and max speed
+            stepperX.setMaxSpeed(abs(desired_speed));
+            if (desired_speed == 0 && stepperX.speed() == 0)
+            {
+                // Prevent running off the end of the position range
+                stepperX.setCurrentPosition(0);
+            }
+            else if (desired_speed < 0)
+            {
+                stepperX.moveTo(-1000000000);
+            }
+            else if (desired_speed > 0)
+            {
+                stepperX.moveTo(1000000000);
+            }
+            last_input_time = current_time;
+        }
+        // stepperX.moveTo(joyX_value);
+        // stepperX.setSpeed(100);
+        // stepperX.runSpeedToPosition();
+    }
+    mainMenu.dirty = true; // Force the main menu to redraw itself
+}
+
+void medir()
+{
+    exitMenuOptions = 0; // Return to the menu
+    delay(500);
+    // TODO
+    mainMenu.dirty = true; // Force the main menu to redraw itself
+}
+
+// ESP32 timer
+void IRAM_ATTR onTimer()
+{
+    clickEncoder.service();
+}

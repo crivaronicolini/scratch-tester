@@ -1,0 +1,46 @@
+[code]
+TFT_eSPI ver = 2.4.61
+Processor    = ESP32
+Frequency    = 240MHz
+Transactions = Yes
+Interface    = SPI
+Display driver = 7789
+Display width  = 135
+Display height = 240
+
+R0 x offset = 52
+R0 y offset = 40
+MOSI    = GPIO 13
+MISO    = GPIO 12
+SCK     = GPIO 14
+TFT_CS   = GPIO 15
+TFT_DC   = GPIO 12
+TFT_RST  = GPIO 35
+
+Font GLCD   loaded
+
+Display SPI frequency = 40.00
+[/code]
+
+[code]
+TFT_eSPI ver = 2.4.61
+Processor    = ESP32
+Frequency    = 240MHz
+Transactions = Yes
+Interface    = SPI
+Display driver = 7789
+Display width  = 135
+Display height = 240
+
+R0 x offset = 52
+R0 y offset = 40
+MOSI    = GPIO 13
+MISO    = GPIO 12
+SCK     = GPIO 14
+TFT_CS   = GPIO 15
+TFT_DC   = GPIO 12
+TFT_RST  = GPIO 35
+
+Font GLCD   loaded
+
+Display SPI frequency = 40.00
