@@ -362,6 +362,11 @@ void homing()
     {
         stepperX.runSpeedToPosition();
     }
+    stepperX.move(mm2step(300));
+    while (!digitalRead(stopSW))
+    {
+        stepperX.runSpeedToPosition();
+    }
     stepperX.setCurrentPosition(0);
     mainMenu.dirty = true;
 }
