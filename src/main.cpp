@@ -19,6 +19,42 @@
 
 using namespace Menu;
 
+// define menu colors --------------------------------------------------------
+#define Black RGB565(0, 0, 0)
+#define Red RGB565(255, 0, 0)
+#define Green RGB565(0, 255, 0)
+#define Blue RGB565(0, 0, 255)
+#define Gray RGB565(128, 128, 128)
+#define LighterRed RGB565(255, 60, 92)    // colores OP-1
+#define LighterGreen RGB565(6, 236, 150)  //
+#define LighterBlue RGB565(111, 132, 225) //
+#define LighterGray RGB565(211, 211, 211)
+#define DarkerRed RGB565(150, 0, 0)
+#define DarkerGreen RGB565(0, 150, 0)
+#define DarkerBlue RGB565(0, 0, 150)
+#define Cyan RGB565(0, 255, 255)
+#define Magenta RGB565(255, 0, 255)
+#define Yellow RGB565(255, 255, 0)
+#define White RGB565(255, 255, 255)
+#define DarkerOrange RGB565(255, 140, 0)
+
+// TFT color table
+const colorDef<uint16_t> colors[6] MEMMODE = {
+    //{{disabled normal,disabled selected},{enabled normal,enabled selected, enabled editing}}
+    {{(uint16_t)Black, (uint16_t)Black}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}},     // bgColor
+    {{(uint16_t)White, (uint16_t)White}, {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // fgColor
+    {{(uint16_t)Red, (uint16_t)Red}, {(uint16_t)Yellow, (uint16_t)Yellow, (uint16_t)Yellow}},  // valColor
+    {{(uint16_t)White, (uint16_t)White}, {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // unitColor
+    {{(uint16_t)White, (uint16_t)Gray}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)White}},    // cursorColor
+    {{(uint16_t)White, (uint16_t)Yellow}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}},    // titleColor
+};
+
+// Define the width and height of the TFT and how much of it to take up
+#define GFX_WIDTH 240
+#define GFX_HEIGHT 135
+#define fontW 6
+#define fontH 9
+
 // Declare pins for rotary encoder
 #define encA 17
 #define encB 16
@@ -156,42 +192,6 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuCalibrar)
      //  ,SUBMENU(configuracion)
 );
-
-// define menu colors --------------------------------------------------------
-#define Black RGB565(0, 0, 0)
-#define Red RGB565(255, 0, 0)
-#define Green RGB565(0, 255, 0)
-#define Blue RGB565(0, 0, 255)
-#define Gray RGB565(128, 128, 128)
-#define LighterRed RGB565(255, 60, 92)    // colores OP-1
-#define LighterGreen RGB565(6, 236, 150)  //
-#define LighterBlue RGB565(111, 132, 225) //
-#define LighterGray RGB565(211, 211, 211)
-#define DarkerRed RGB565(150, 0, 0)
-#define DarkerGreen RGB565(0, 150, 0)
-#define DarkerBlue RGB565(0, 0, 150)
-#define Cyan RGB565(0, 255, 255)
-#define Magenta RGB565(255, 0, 255)
-#define Yellow RGB565(255, 255, 0)
-#define White RGB565(255, 255, 255)
-#define DarkerOrange RGB565(255, 140, 0)
-
-// TFT color table
-const colorDef<uint16_t> colors[6] MEMMODE = {
-    //{{disabled normal,disabled selected},{enabled normal,enabled selected, enabled editing}}
-    {{(uint16_t)Black, (uint16_t)Black}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}},     // bgColor
-    {{(uint16_t)White, (uint16_t)White}, {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // fgColor
-    {{(uint16_t)Red, (uint16_t)Red}, {(uint16_t)Yellow, (uint16_t)Yellow, (uint16_t)Yellow}},  // valColor
-    {{(uint16_t)White, (uint16_t)White}, {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // unitColor
-    {{(uint16_t)White, (uint16_t)Gray}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)White}},    // cursorColor
-    {{(uint16_t)White, (uint16_t)Yellow}, {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}},    // titleColor
-};
-
-// Define the width and height of the TFT and how much of it to take up
-#define GFX_WIDTH 240
-#define GFX_HEIGHT 135
-#define fontW 6
-#define fontH 9
 
 const panel panels[] MEMMODE = {{0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}}; // Main menu panel
 navNode *nodes[sizeof(panels) / sizeof(panel)];                                 // navNodes to store navigation status
