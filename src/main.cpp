@@ -52,6 +52,11 @@ int fuerzaFinal = 0;   // N
 int velocidad = 0;     // mm x minuto
 int largo = 0;         // mm
 
+// params calibracion
+int cantVeces = 10;
+int cantMm = 5;
+int pasosPorMm = 1600;
+
 // params motores
 int maxSpeedX = 100;
 const int MICROSTEP = 16;
@@ -77,6 +82,7 @@ TFT_eFEX fex = TFT_eFEX(&gfx);
 void medir();
 void medirProgreso();
 void definirOrigen();
+void calibrar();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -116,6 +122,13 @@ result doHoming()
     return proceed;
 }
 
+result doCalibrar()
+{
+    delay(menuDelayTime);
+    exitMenuOptions = 5;
+    return proceed;
+}
+
 result updateEEPROM()
 {
     // writeEEPROM();
@@ -123,6 +136,13 @@ result updateEEPROM()
 }
 
 #define MAX_DEPTH 1
+
+MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
+     OP("Calibrar", doCalibrar, enterEvent),
+     FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(cantMm, "Cantidad de mm:", "", 0, 100, 10, 0.1, doNothing, noEvent, noStyle),
+     FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
+     EXIT("<- Volver"));
 
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
@@ -132,7 +152,8 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      OP("Definir origen", doDefinirOrigen, enterEvent),
      OP("Medir!", doMedir, enterEvent),
      OP("Medir con progreso", doMedirProgreso, enterEvent),
-     OP("Homing", doHoming, enterEvent)
+     OP("Homing", doHoming, enterEvent),
+     SUBMENU(subMenuCalibrar)
      //  ,SUBMENU(configuracion)
 );
 
@@ -257,6 +278,12 @@ void loop()
         homing();
         break;
     }
+    case 5:
+    {
+        delay(menuDelayTime);
+        calibrar();
+        break;
+    }
     default: // Do the normal program functions with ArduinoMenu
         if (now - lastMenuFrame >= menuFPS)
         {
@@ -368,6 +395,21 @@ void homing()
         stepperX.runSpeedToPosition();
     }
     stepperX.setCurrentPosition(0);
+    mainMenu.dirty = true;
+}
+
+void calibrar()
+{
+    exitMenuOptions = 0;
+    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    for (int i = 0; i < cantVeces; i++)
+    {
+        stepperX.move(pasosPorMm * cantMm);
+        stepperX.runToPosition();
+
+        stepperX.move(-pasosPorMm * cantMm);
+        stepperX.runToPosition();
+    }
     mainMenu.dirty = true;
 }
 // ESP32 timer
