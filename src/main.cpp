@@ -119,6 +119,7 @@ void medir();
 void medirProgreso();
 void definirOrigen();
 void calibrar();
+void homing();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -176,7 +177,7 @@ result updateEEPROM()
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
      OP("Calibrar", doCalibrar, enterEvent),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 1, doNothing, noEvent, noStyle),
-     FIELD(cantMm, "Cantidad de mm:", "", 0, 100, 10, 0.1, doNothing, noEvent, noStyle),
+     FIELD(cantMm, "Cantidad de mm:", "", 0, 100, 10, 1, doNothing, noEvent, noStyle),
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
@@ -383,7 +384,7 @@ void medirProgreso()
 void homing()
 {
     exitMenuOptions = 0;
-    stepperX.setSpeed(maxSpeedX / 2);
+    stepperX.setSpeed(maxSpeedX / 2.0);
     stepperX.move(-mm2step(300));
     while (digitalRead(stopSW))
     {
