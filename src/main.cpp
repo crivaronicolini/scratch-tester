@@ -56,8 +56,8 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define fontH 9
 
 // Declare pins for rotary encoder
-#define encA 17
-#define encB 16
+#define encA 9
+#define encB 10
 #define encBtn 4
 // steps per detent
 #define encSteps 4
@@ -65,13 +65,13 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // Declare pins for joystick
 #define joyX 36
 #define joyY 39
-#define joySW 34 // por ahi puedo usar el mismo pin que el encoder
+#define joySW 21 // por ahi puedo usar el mismo pin que el encoder
 
-#define stopSW 35
+#define stopSW 32
 
 // motor pins
-#define stepX 17
-#define dirX 16
+#define stepX 2
+#define dirX 0
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -84,9 +84,9 @@ int menuDelayTime = 100;
 
 // params medicion
 int fuerzaInicial = 0; // N
-int fuerzaFinal = 0;   // N
-int velocidad = 0;     // mm x minuto
-int largo = 0;         // mm
+int fuerzaFinal = 5;   // N
+int velocidad = 10;     // mm x minuto
+int largo = 10;         // mm
 
 // params calibracion
 int cantVeces = 10;
@@ -95,7 +95,7 @@ int pasosPorMm = 1600;
 
 // params motores
 int maxSpeedX = 100;
-const int MICROSTEP = 16;
+const int MICROSTEP = 32;
 
 // params tiempo
 int INPUT_READ_INTERVAL = 100;
@@ -172,7 +172,7 @@ result updateEEPROM()
     return quit;
 }
 
-#define MAX_DEPTH 1
+#define MAX_DEPTH 2
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
      OP("Calibrar", doCalibrar, enterEvent),
@@ -219,7 +219,7 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial.begin(9600);
     delay(3000);
 
     clickEncoder.setAccelerationEnabled(true);
@@ -252,7 +252,11 @@ void loop()
     static unsigned long lastMenuFrame = -menuFPS;
     unsigned long now = millis();
     //... other stuff on loop, will keep executing
-
+    // Serial.println(analogRead(joyX));
+    // Serial.print("joy ");
+    // Serial.println(digitalRead(joySW));
+    // Serial.print("enc ");
+    // Serial.println(digitalRead(encBtn));
     switch (exitMenuOptions)
     {
     case 1:
@@ -316,6 +320,8 @@ void definirOrigen()
 
             // Based on the input, set targets and max speed
             stepperX.setMaxSpeed(abs(desired_speed));
+            Serial.print("spped ");
+            Serial.println(desired_speed);
             if (desired_speed == 0 && stepperX.speed() == 0)
             {
                 // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
@@ -335,6 +341,7 @@ void definirOrigen()
         }
         stepperX.run();
     }
+    stepperX.setCurrentPosition(0);
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
 
