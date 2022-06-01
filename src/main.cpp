@@ -70,8 +70,8 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define stopSW 32
 
 // motor pins
-#define stepX 2
-#define dirX 0
+#define dirX 33
+#define stepX 25
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -85,8 +85,8 @@ int menuDelayTime = 100;
 // params medicion
 int fuerzaInicial = 0; // N
 int fuerzaFinal = 5;   // N
-int velocidad = 10;     // mm x minuto
-int largo = 10;         // mm
+int velocidad = 10;    // mm x minuto
+int largo = 10;        // mm
 
 // params calibracion
 int cantVeces = 10;
@@ -94,7 +94,8 @@ int cantMm = 5;
 int pasosPorMm = 1600;
 
 // params motores
-int maxSpeedX = 100;
+// int maxSpeedX = 25000;
+int maxSpeedX = 5000;
 const int MICROSTEP = 32;
 
 // params tiempo
@@ -219,7 +220,7 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 void setup()
 {
-    Serial.begin(9600);
+    Serial.begin(115200);
     delay(3000);
 
     clickEncoder.setAccelerationEnabled(true);
@@ -303,6 +304,19 @@ void definirOrigen()
     exitMenuOptions = 0;
     // Return to the menu
     delay(menuDelayTime);
+
+    // samplea 10 veces y toma el promedio para ver el cero del joystick
+    int suma = 0;
+    for (int i = 0; i < 50; i++)
+    {
+        suma += analogRead(joyX);
+    }
+    float bufferMax = (suma / 10) + 50;
+    float bufferMin = (suma / 10) - 50;
+    Serial.print("buffer min ");
+    Serial.println(bufferMin);
+    stepperX.setAcceleration(4 * maxSpeedX);
+
     while (digitalRead(joySW))
     {
         // Every INPUT_READ_INTERVAL milliseconds, read inputs.
@@ -315,14 +329,21 @@ void definirOrigen()
         {
             int joyX_value = analogRead(joyX);
             // Map the raw analog value to speed range from -maxSpeedX to maxSpeedX
-            int desired_speed = map(joyX_value, 0, 1023, -maxSpeedX, maxSpeedX);
+            int desired_speed = map(joyX_value, 0, 4095, -maxSpeedX, maxSpeedX);
             // Serial.println(desired_speed);
 
             // Based on the input, set targets and max speed
             stepperX.setMaxSpeed(abs(desired_speed));
-            Serial.print("spped ");
+            Serial.print("speed ");
             Serial.println(desired_speed);
-            if (desired_speed == 0 && stepperX.speed() == 0)
+            Serial.print("analog ");
+            Serial.println(joyX_value);
+            if (joyX_value > bufferMin && bufferMax > joyX_value)
+            {
+                Serial.println("skip");
+                continue;
+            }
+            else if (desired_speed == 0 && stepperX.speed() == 0)
             {
                 // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
                 // stepperX.setCurrentPosition(0);
@@ -331,6 +352,7 @@ void definirOrigen()
             }
             else if (desired_speed < 0)
             {
+                Serial.println("negativo");
                 stepperX.moveTo(-1000000000);
             }
             else if (desired_speed > 0)
