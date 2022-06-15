@@ -52,20 +52,20 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // Define the width and height of the TFT and how much of it to take up
 #define GFX_WIDTH 240
 #define GFX_HEIGHT 135
-#define fontW 6
-#define fontH 9
+#define fontW 12
+#define fontH 15
 
 // Declare pins for rotary encoder
-#define encA 9
-#define encB 10
+#define encA 36
+#define encB 39
 #define encBtn 4
 // steps per detent
 #define encSteps 4
 
 // Declare pins for joystick
-#define joyX 36
-#define joyY 39
-#define joySW 21 // por ahi puedo usar el mismo pin que el encoder
+#define joyX 34
+#define joyY 35
+#define joySW 4 // por ahi puedo usar el mismo pin que el encoder
 
 #define stopSW 32
 
@@ -127,6 +127,28 @@ float mm2step(float mm) { return mm * MICROSTEP * 100; }
 float step2mm(float step) { return step / (MICROSTEP * 100); }
 float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
 float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
+
+boolean DEBUG = true;
+void debug(char info[])
+{
+    if (DEBUG)
+        Serial.println(info);
+}
+void debug(char info)
+{
+    if (DEBUG)
+        Serial.println(info);
+}
+void debug(int info)
+{
+    if (DEBUG)
+        Serial.println(info);
+}
+void debug(float info)
+{
+    if (DEBUG)
+        Serial.println(info);
+}
 
 //////////////////////////////////////////////////////////
 // Start ArduinoMenu
@@ -221,7 +243,7 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 void setup()
 {
     Serial.begin(115200);
-    delay(3000);
+    delay(1000);
 
     clickEncoder.setAccelerationEnabled(true);
     clickEncoder.setDoubleClickEnabled(false); // Disable doubleclicks makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
@@ -233,9 +255,10 @@ void setup()
     timerAlarmEnable(timer);
 
     gfx.init();         // Initialize the display
-    gfx.setRotation(0); // Set the rotation (0-3) to vertical
+    gfx.setRotation(1); // Set the rotation (0-3) to vertical
     Serial.println("Initialized display");
     gfx.fillScreen(TFT_BLACK);
+    gfx.fillScreen(TFT_WHITE);
     Serial.println("done");
 
     nav.showTitle = true; // Show titles in the menus and submenus
@@ -244,6 +267,7 @@ void setup()
 
     stepperX.setMaxSpeed(maxSpeedX);
     pinMode(joySW, INPUT_PULLUP);
+    pinMode(encBtn, INPUT_PULLUP);
 }
 
 void loop()
@@ -389,21 +413,26 @@ void medirProgreso()
     exitMenuOptions = 0; // Return to the menu
     delay(menuDelayTime);
     float largoSteps = mm2step(largo);
-    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    // stepperX.setSpeed(mmxm2stepxs(velocidad));
+    stepperX.setSpeed(10000000);
     stepperX.move(largoSteps);
     last_input_time = 0;
+    gfx.fillScreen(Black);
     while (stepperX.distanceToGo() != 0)
     {
         unsigned long current_time = millis();
         if (current_time - last_input_time > 500)
         {
             float percent = 100 * stepperX.currentPosition() / largoSteps;
-            fex.drawProgressBar(10, 70, 20, 20, percent, TFT_DARKGREEN, TFT_DARKCYAN);
+            fex.drawProgressBar(20, 70, 200, 25, percent, Red, White);
             last_input_time = current_time;
         }
-        stepperX.runSpeedToPosition();
+        stepperX.runSpeed();
+        // stepperX.runSpeedToPosition();
+        Serial.println(stepperX.currentPosition());
     }
     delay(menuDelayTime);
+    Serial.print("volviendo al origen");
     stepperX.setSpeed(maxSpeedX);
     stepperX.move(-largoSteps);
     stepperX.runToPosition();
