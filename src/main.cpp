@@ -85,11 +85,11 @@ int menuDelayTime = 100;
 // params medicion
 int fuerzaInicial = 0; // N
 int fuerzaFinal = 5;   // N
-int velocidad = 10;    // mm x minuto
+int velocidad = 100;   // mm x minuto
 int largo = 10;        // mm
 
 // params calibracion
-int cantVeces = 10;
+int cantVeces = 2;
 int cantMm = 5;
 int pasosPorMm = 1600;
 
@@ -189,7 +189,7 @@ result updateEEPROM()
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
      OP("Calibrar", doCalibrar, enterEvent),
-     FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing, noEvent, noStyle),
      FIELD(cantMm, "Cantidad de mm:", "", 0, 100, 10, 1, doNothing, noEvent, noStyle),
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
@@ -256,6 +256,7 @@ void setup()
     //  nav.idleOn(); // Start with the main screen and not the menu
 
     stepperX.setMaxSpeed(maxSpeedX);
+    stepperX.setAcceleration(10000);
     pinMode(joySW, INPUT_PULLUP);
     pinMode(encBtn, INPUT_PULLUP);
 }
@@ -443,13 +444,26 @@ void calibrar()
 {
     exitMenuOptions = 0;
     stepperX.setSpeed(mmxm2stepxs(velocidad));
+    debugf("cant veces %d, pasosxmm %d, cantmm %d mm %d step\n", cantVeces, pasosPorMm, cantMm, mm2step(cantMm));
+    debugf("velocidad %d mmxm, %f pxs\n", velocidad, mmxm2stepxs(velocidad));
+    stepperX.setAcceleration(4 * maxSpeedX);
+
     for (int i = 0; i < cantVeces; i++)
     {
-        stepperX.move(pasosPorMm * cantMm);
-        stepperX.runToPosition();
+        // stepperX.move(pasosPorMm * cantMm);
+        // stepperX.runToPosition();
 
-        stepperX.move(-pasosPorMm * cantMm);
+        // stepperX.move(-pasosPorMm * cantMm);
+        // stepperX.runToPosition();
+        // debugln("loop 1");
+
+        stepperX.move(mm2step(cantMm));
         stepperX.runToPosition();
+        delay(1000);
+        stepperX.move(-mm2step(cantMm));
+        stepperX.runToPosition();
+        delay(1000);
+        debugln("loop 2");
     }
     mainMenu.dirty = true;
 }
