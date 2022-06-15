@@ -315,12 +315,13 @@ void definirOrigen()
 
     // samplea 10 veces y toma el promedio para ver el cero del joystick
     int suma = 0;
-    for (int i = 0; i < 50; i++)
+    int cantidad = 50;
+    for (int i = 0; i < cantidad; i++)
     {
         suma += analogRead(joyX);
     }
-    float bufferMax = (suma / 10) + 50;
-    float bufferMin = (suma / 10) - 50;
+    float bufferMax = (suma / cantidad) + 100;
+    float bufferMin = (suma / cantidad) - 100;
     debugf("buffer min: %f\n", bufferMin);
     stepperX.setAcceleration(4 * maxSpeedX);
 
@@ -341,8 +342,8 @@ void definirOrigen()
 
             // Based on the input, set targets and max speed
             stepperX.setMaxSpeed(abs(desired_speed));
-            debugf("speed %f\n", desired_speed);
-            debugf("analog %f\n", joyX_value);
+            debugf("speed %d\n", desired_speed);
+            debugf("analog %d\n", joyX_value);
             if (joyX_value > bufferMin && bufferMax > joyX_value)
             {
                 debugln("skip");
@@ -352,7 +353,7 @@ void definirOrigen()
             {
                 // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
                 // stepperX.setCurrentPosition(0);
-                debugf("Posicion %f\n", stepperX.currentPosition());
+                debugf("Posicion %d\n", stepperX.currentPosition());
             }
             else if (desired_speed < 0)
             {
@@ -361,6 +362,7 @@ void definirOrigen()
             }
             else if (desired_speed > 0)
             {
+                debugln("positivo");
                 stepperX.moveTo(1000000000);
             }
             last_input_time = current_time;
