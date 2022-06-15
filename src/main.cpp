@@ -128,27 +128,17 @@ float step2mm(float step) { return step / (MICROSTEP * 100); }
 float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
 float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 
-boolean DEBUG = true;
-void debug(char info[])
-{
-    if (DEBUG)
-        Serial.println(info);
-}
-void debug(char info)
-{
-    if (DEBUG)
-        Serial.println(info);
-}
-void debug(int info)
-{
-    if (DEBUG)
-        Serial.println(info);
-}
-void debug(float info)
-{
-    if (DEBUG)
-        Serial.println(info);
-}
+#define DEBUG 1
+
+#if DEBUG == 1
+#define debug(x) Serial.print(x)
+#define debugln(x) Serial.println(x)
+#define debugf(...) Serial.printf(__VA_ARGS__)
+#else
+#define debug(x)
+#define debugln(x)
+#define debugf(x)
+#endif
 
 //////////////////////////////////////////////////////////
 // Start ArduinoMenu
@@ -256,10 +246,10 @@ void setup()
 
     gfx.init();         // Initialize the display
     gfx.setRotation(1); // Set the rotation (0-3) to vertical
-    Serial.println("Initialized display");
+    debugln("Initialized display");
     gfx.fillScreen(TFT_BLACK);
     gfx.fillScreen(TFT_WHITE);
-    Serial.println("done");
+    debugln("done");
 
     nav.showTitle = true; // Show titles in the menus and submenus
     //  nav.timeOut = 60;  // Timeout after 60 seconds of inactivity
@@ -276,12 +266,6 @@ void loop()
     constexpr int menuFPS = 1000 / 30;
     static unsigned long lastMenuFrame = -menuFPS;
     unsigned long now = millis();
-    //... other stuff on loop, will keep executing
-    // Serial.println(analogRead(joyX));
-    // Serial.print("joy ");
-    // Serial.println(digitalRead(joySW));
-    // Serial.print("enc ");
-    // Serial.println(digitalRead(encBtn));
     switch (exitMenuOptions)
     {
     case 1:
@@ -337,8 +321,7 @@ void definirOrigen()
     }
     float bufferMax = (suma / 10) + 50;
     float bufferMin = (suma / 10) - 50;
-    Serial.print("buffer min ");
-    Serial.println(bufferMin);
+    debugf("buffer min: %f\n", bufferMin);
     stepperX.setAcceleration(4 * maxSpeedX);
 
     while (digitalRead(joySW))
@@ -354,29 +337,26 @@ void definirOrigen()
             int joyX_value = analogRead(joyX);
             // Map the raw analog value to speed range from -maxSpeedX to maxSpeedX
             int desired_speed = map(joyX_value, 0, 4095, -maxSpeedX, maxSpeedX);
-            // Serial.println(desired_speed);
+            // debugln(desired_speed);
 
             // Based on the input, set targets and max speed
             stepperX.setMaxSpeed(abs(desired_speed));
-            Serial.print("speed ");
-            Serial.println(desired_speed);
-            Serial.print("analog ");
-            Serial.println(joyX_value);
+            debugf("speed %f\n", desired_speed);
+            debugf("analog %f\n", joyX_value);
             if (joyX_value > bufferMin && bufferMax > joyX_value)
             {
-                Serial.println("skip");
+                debugln("skip");
                 continue;
             }
             else if (desired_speed == 0 && stepperX.speed() == 0)
             {
                 // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
                 // stepperX.setCurrentPosition(0);
-                Serial.print("Posicion = ");
-                Serial.println(stepperX.currentPosition());
+                debugf("Posicion %f\n", stepperX.currentPosition());
             }
             else if (desired_speed < 0)
             {
-                Serial.println("negativo");
+                debugln("negativo");
                 stepperX.moveTo(-1000000000);
             }
             else if (desired_speed > 0)
@@ -429,10 +409,10 @@ void medirProgreso()
         }
         stepperX.runSpeed();
         // stepperX.runSpeedToPosition();
-        Serial.println(stepperX.currentPosition());
+        debugln(stepperX.currentPosition());
     }
     delay(menuDelayTime);
-    Serial.print("volviendo al origen");
+    debug("volviendo al origen");
     stepperX.setSpeed(maxSpeedX);
     stepperX.move(-largoSteps);
     stepperX.runToPosition();
