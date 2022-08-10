@@ -17,6 +17,10 @@
 
 #include <AccelStepper.h>
 
+#include <HX711.h>
+
+HX711 scale;
+
 using namespace Menu;
 
 // define menu colors --------------------------------------------------------
@@ -73,6 +77,10 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define dirX 33
 #define stepX 25
 
+// HX711
+#define load 21
+#define SCK 0
+
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
 #define TEXTCOLOR TFT_WHITE
@@ -121,6 +129,7 @@ void medirProgreso();
 void definirOrigen();
 void calibrar();
 void homing();
+void verPeso();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -179,6 +188,12 @@ result doCalibrar()
     return proceed;
 }
 
+result doVerPeso()
+{
+    delay(menuDelayTime);
+    exitMenuOptions = 6;
+    return proceed;
+}
 result updateEEPROM()
 {
     // writeEEPROM();
@@ -203,6 +218,7 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      OP("Medir!", doMedir, enterEvent),
      OP("Medir con progreso", doMedirProgreso, enterEvent),
      OP("Homing", doHoming, enterEvent),
+     OP("Ver peso", doVerPeso, enterEvent),
      SUBMENU(subMenuCalibrar)
      //  ,SUBMENU(configuracion)
 );
@@ -259,6 +275,8 @@ void setup()
     stepperX.setAcceleration(10000);
     pinMode(joySW, INPUT_PULLUP);
     pinMode(encBtn, INPUT_PULLUP);
+
+    scale.begin(load, SCK);
 }
 
 void loop()
@@ -297,6 +315,12 @@ void loop()
     {
         delay(menuDelayTime);
         calibrar();
+        break;
+    }
+    case 6:
+    {
+        delay(menuDelayTime);
+        verPeso();
         break;
     }
     default: // Do the normal program functions with ArduinoMenu
@@ -465,6 +489,52 @@ void calibrar()
         delay(1000);
         debugln("loop 2");
     }
+    mainMenu.dirty = true;
+}
+
+// 500g
+#define CALIBRATION_FACTOR 50100
+// 100g
+#define CALIBRATION_FACTOR 10297
+// 1000g
+#define CALIBRATION_FACTOR 10180500
+
+void verPeso()
+{
+    exitMenuOptions = 0;
+    gfx.fillScreen(TFT_BLACK);
+    gfx.setCursor(0, 0, 2);
+    gfx.setCursor(120, 60);
+    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+    gfx.setTextSize(2);
+    gfx.drawCentreString("Peso", 120, 30, 1);
+    gfx.setTextPadding(100);
+
+    gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
+
+    if (scale.wait_ready_retry(3, 500))
+    {
+        scale.set_scale(CALIBRATION_FACTOR);
+        // scale.set_scale();
+        debugln("\nTare... remove any weights from the scale.");
+        // delay(1000);
+        scale.tare(50);
+        debugln("Tare done...");
+        // delay(1000);
+        while (digitalRead(joySW))
+        {
+            long reading = 100000 * scale.get_units(1);
+            // debugf("peso %f\n", reading);
+            gfx.drawFloat(reading, 0, 100, 70, 1);
+        }
+    }
+    else
+    {
+        debugln("\nHX711 not found.");
+    }
+    delay(1000);
+    gfx.setTextPadding(0);
+    gfx.setTextSize(1);
     mainMenu.dirty = true;
 }
 // ESP32 timer
