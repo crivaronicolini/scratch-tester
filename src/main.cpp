@@ -153,13 +153,13 @@ ClickEncoderStream encStream(clickEncoder, 1);
 TFT_eSPI gfx = TFT_eSPI();
 TFT_eFEX fex = TFT_eFEX(&gfx);
 
-void medir();
-void medirProgreso();
-void definirOrigen();
-void homing();
-void calibrarMotores();
-void calibrarPID();
-void calibrarCelda();
+result medir();
+result medirProgreso();
+result definirOrigen();
+result homing();
+result calibrarMotores();
+result calibrarPID();
+result calibrarCelda();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -183,53 +183,6 @@ float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 // Start ArduinoMenu
 //////////////////////////////////////////////////////////
 
-result doDefinirOrigen()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 1;
-    return proceed;
-}
-
-result doMedir()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 2;
-    return proceed;
-}
-
-result doMedirProgreso()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 3;
-    return proceed;
-}
-
-result doHoming()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 4;
-    return proceed;
-}
-
-result doCalibrarMotores()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 5;
-    return proceed;
-}
-result doCalibrarPID()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 6;
-    return proceed;
-}
-
-result doCalibrarCelda()
-{
-    delay(menuDelayTime);
-    exitMenuOptions = 7;
-    return proceed;
-}
 result updateEEPROM()
 {
     // writeEEPROM();
@@ -245,7 +198,7 @@ TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing,
        VALUE("Y", 2, doNothing, noEvent));
 
 MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, noStyle,
-     OP("Calibrar", doCalibrarMotores, enterEvent),
+     OP("Calibrar", calibrarMotores, enterEvent),
      SUBMENU(subMenuToggleEjeACalibrar),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing, noEvent, noStyle),
      FIELD(cantMm, "Cantidad de mm:", "", 0, 100, 10, 1, doNothing, noEvent, noStyle),
@@ -253,8 +206,8 @@ MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, noSt
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
-     OP("Calibrar Celda de Carga", doCalibrarCelda, enterEvent),
-     OP("Calibrar PID", doCalibrarPID, enterEvent),
+     OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
+     OP("Calibrar PID", calibrarPID, enterEvent),
      SUBMENU(subMenuCalibrarMotores),
      EXIT("<- Volver"));
 
@@ -263,10 +216,10 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
-     OP("Definir origen", doDefinirOrigen, enterEvent),
-     OP("Medir!", doMedir, enterEvent),
-     OP("Medir con progreso", doMedirProgreso, enterEvent),
-     OP("Homing", doHoming, enterEvent),
+     OP("Definir origen", definirOrigen, enterEvent),
+     OP("Medir!", medir, enterEvent),
+     OP("Medir con progreso", medirProgreso, enterEvent),
+     OP("Homing", homing, enterEvent),
      SUBMENU(subMenuCalibrar));
 
 const panel panels[] MEMMODE = {{0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}}; // Main menu panel
@@ -367,60 +320,15 @@ void loop()
     constexpr int menuFPS = 1000 / 30;
     static unsigned long lastMenuFrame = -menuFPS;
     unsigned long now = millis();
-    switch (exitMenuOptions)
+
+    if (now - lastMenuFrame >= menuFPS)
     {
-    case 1:
-    {
-        delay(menuDelayTime);
-        definirOrigen();
-        break;
-    }
-    case 2:
-    {
-        delay(menuDelayTime);
-        medir();
-        break;
-    }
-    case 3:
-    {
-        delay(menuDelayTime);
-        medirProgreso();
-        break;
-    }
-    case 4:
-    {
-        delay(menuDelayTime);
-        homing();
-        break;
-    }
-    case 5:
-    {
-        delay(menuDelayTime);
-        calibrarMotores();
-        break;
-    }
-    case 6:
-    {
-        delay(menuDelayTime);
-        calibrarPID();
-        break;
-    }
-    case 7:
-    {
-        delay(menuDelayTime);
-        calibrarCelda();
-        break;
-    }
-    default: // Do the normal program functions with ArduinoMenu
-        if (now - lastMenuFrame >= menuFPS)
-        {
-            lastMenuFrame = millis();
-            nav.poll(); // Poll the input devices
-        }
+        lastMenuFrame = millis();
+        nav.poll();
     }
 }
 
-void definirOrigen()
+result definirOrigen()
 {
     exitMenuOptions = 0;
     // Return to the menu
@@ -534,10 +442,11 @@ void definirOrigen()
     }
     stepperX.setCurrentPosition(0);
     stepperY.setCurrentPosition(0);
-    mainMenu.dirty = true; // Force the main menu to redraw itself
+    mainMenu.dirty = true;
+    return proceed;
 }
 
-void medir()
+result medir()
 {
     exitMenuOptions = 0; // Return to the menu
     delay(menuDelayTime);
@@ -552,9 +461,10 @@ void medir()
     stepperX.runToPosition();
 
     mainMenu.dirty = true; // Force the main menu to redraw itself
+    return proceed;
 }
 
-void medirProgreso()
+result medirProgreso()
 {
     exitMenuOptions = 0; // Return to the menu
     delay(menuDelayTime);
@@ -583,9 +493,10 @@ void medirProgreso()
     stepperX.move(-largoSteps);
     stepperX.runToPosition();
     mainMenu.dirty = true;
+    return proceed;
 }
 
-void homing()
+result homing()
 {
     exitMenuOptions = 0;
     stepperX.setSpeed(maxSpeedX / 2.0);
@@ -601,9 +512,10 @@ void homing()
     }
     stepperX.setCurrentPosition(0);
     mainMenu.dirty = true;
+    return proceed;
 }
 
-void calibrarMotores()
+result calibrarMotores()
 {
     exitMenuOptions = 0;
     AccelStepper stp;
@@ -638,9 +550,10 @@ void calibrarMotores()
         debugln("loop 2");
     }
     mainMenu.dirty = true;
+    return proceed;
 }
 
-void calibrarPID()
+result calibrarPID()
 {
     exitMenuOptions = 0;
     gfx.fillScreen(TFT_BLACK);
@@ -663,9 +576,10 @@ void calibrarPID()
         gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
     }
     // debugf("peso %f\n", reading);
+    return proceed;
 }
 
-void calibrarCelda()
+result calibrarCelda()
 {
     exitMenuOptions = 0;
     gfx.fillScreen(TFT_BLACK);
@@ -700,6 +614,7 @@ void calibrarCelda()
     gfx.setTextPadding(0);
     gfx.setTextSize(1);
     mainMenu.dirty = true;
+    return proceed;
 }
 // ESP32 timer
 void IRAM_ATTR onTimer()
