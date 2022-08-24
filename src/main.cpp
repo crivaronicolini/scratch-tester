@@ -197,7 +197,7 @@ TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing,
        VALUE("X", 1, doNothing, noEvent),
        VALUE("Y", 2, doNothing, noEvent));
 
-MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, noStyle,
+MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, wrapStyle,
      OP("Calibrar", calibrarMotores, enterEvent),
      SUBMENU(subMenuToggleEjeACalibrar),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing, noEvent, noStyle),
@@ -205,14 +205,14 @@ MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, noSt
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
-MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, noStyle,
+MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
      OP("Calibrar PID", calibrarPID, enterEvent),
-     FIELD(Kp, "Proporcional: ", "", 0, 10, 1, 0, doNothing, noEvent, noStyle),
-     FIELD(Ki, "Integrador: ", "", 0, 10, 1, 0, doNothing, noEvent, noStyle),
-     FIELD(Kd, "Derivador: ", "", 0, 10, 1, 0, doNothing, noEvent, noStyle),
+     FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0, doNothing, noEvent, noStyle),
+     FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0, doNothing, noEvent, noStyle),
+     FIELD(Kd, "Derivador: ", "", 0, 50, 1, 0, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
-MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
+MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
      SUBMENU(subMenuCalibrarPID),
      SUBMENU(subMenuCalibrarMotores),
