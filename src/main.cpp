@@ -18,6 +18,8 @@
 #include <TMCStepper.h>
 #include <AccelStepper.h>
 
+#include <PID_v1.h>
+
 #include <HX711.h>
 
 HX711 scale;
@@ -70,19 +72,19 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // Declare pins for joystick
 #define joyY 35
 #define joyX 32
-#define joySW 34 // por ahi puedo usar el mismo pin que el encoder
+#define joySW 34
 
 #define stopSW 0
 
 // motor pins
-#define dirX 4 // podrian ser del lado derecho, TODO probar con 22 Y 21, LO PONGO EN EL ESQUEMA
+#define dirX 4
 #define stepX 16
 #define dirY 21
 #define stepY 22
 
 #define SW_MISO 19 // Software Master In Slave Out (MISO)
 #define CS_PINX 17 // Chip select
-#define CS_PINY 5 // Chip select CAMBIAR A 5
+#define CS_PINY 5  // Chip select
 #define SW_SCK 18  // Software Slave Clock (SCK)
 #define SW_MOSI 23 // Software Master Out Slave In (MOSI)
 #define R_SENSE 0.11f
@@ -90,6 +92,13 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // HX711
 #define load 33
 #define SCK 25
+
+// 500g
+// #define CALIBRATION_FACTOR 50100
+// 100g
+// #define CALIBRATION_FACTOR 10297
+// 1000g
+#define CALIBRATION_FACTOR 10180500
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -102,9 +111,13 @@ int menuDelayTime = 100;
 
 // params medicion
 int fuerzaInicial = 0; // N
-int fuerzaFinal = 5;   // N
+int fuerzaFinal = 1;   // N
 int velocidad = 100;   // mm x minuto
 int largo = 10;        // mm
+
+// params PID
+double fuerzaSetpoint = fuerzaFinal * 102, fuerzaInput, fuerzaOutput;
+double Kp = 2, Ki = 5, Kd = 1;
 
 // params calibracion
 int cantVeces = 2;
@@ -122,6 +135,8 @@ unsigned long last_input_time = 0;
 
 // params botones
 int joySW_status = 1;
+
+PID fuerzaPID(&fuerzaInput, &fuerzaOutput, &fuerzaSetpoint, Kp, Ki, Kd, DIRECT);
 
 TMC2130Stepper driverX = TMC2130Stepper(CS_PINX, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
 TMC2130Stepper driverY = TMC2130Stepper(CS_PINY, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
@@ -141,9 +156,10 @@ TFT_eFEX fex = TFT_eFEX(&gfx);
 void medir();
 void medirProgreso();
 void definirOrigen();
-void calibrar();
 void homing();
-void verPeso();
+void calibrarMotores();
+void calibrarPID();
+void calibrarCelda();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -195,17 +211,23 @@ result doHoming()
     return proceed;
 }
 
-result doCalibrar()
+result doCalibrarMotores()
 {
     delay(menuDelayTime);
     exitMenuOptions = 5;
     return proceed;
 }
-
-result doVerPeso()
+result doCalibrarPID()
 {
     delay(menuDelayTime);
     exitMenuOptions = 6;
+    return proceed;
+}
+
+result doCalibrarCelda()
+{
+    delay(menuDelayTime);
+    exitMenuOptions = 7;
     return proceed;
 }
 result updateEEPROM()
@@ -214,13 +236,26 @@ result updateEEPROM()
     return quit;
 }
 
-#define MAX_DEPTH 2
+#define MAX_DEPTH 3
 
-MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
-     OP("Calibrar", doCalibrar, enterEvent),
+int ejeACalibrar = 1;
+
+TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing, noEvent, noStyle,
+       VALUE("X", 1, doNothing, noEvent),
+       VALUE("Y", 2, doNothing, noEvent));
+
+MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, noStyle,
+     OP("Calibrar", doCalibrarMotores, enterEvent),
+     SUBMENU(subMenuToggleEjeACalibrar),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing, noEvent, noStyle),
      FIELD(cantMm, "Cantidad de mm:", "", 0, 100, 10, 1, doNothing, noEvent, noStyle),
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
+     EXIT("<- Volver"));
+
+MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
+     OP("Calibrar Celda de Carga", doCalibrarCelda, enterEvent),
+     OP("Calibrar PID", doCalibrarPID, enterEvent),
+     SUBMENU(subMenuCalibrarMotores),
      EXIT("<- Volver"));
 
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
@@ -232,10 +267,7 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      OP("Medir!", doMedir, enterEvent),
      OP("Medir con progreso", doMedirProgreso, enterEvent),
      OP("Homing", doHoming, enterEvent),
-     OP("Ver peso", doVerPeso, enterEvent),
-     SUBMENU(subMenuCalibrar)
-     //  ,SUBMENU(configuracion)
-);
+     SUBMENU(subMenuCalibrar));
 
 const panel panels[] MEMMODE = {{0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}}; // Main menu panel
 navNode *nodes[sizeof(panels) / sizeof(panel)];                                 // navNodes to store navigation status
@@ -312,9 +344,21 @@ void setup()
     //  nav.timeOut = 60;  // Timeout after 60 seconds of inactivity
     //  nav.idleOn(); // Start with the main screen and not the menu
 
-    pinMode(joySW, INPUT_PULLUP);
     pinMode(encBtn, INPUT_PULLUP);
+
     scale.begin(load, SCK);
+    if (scale.wait_ready_retry(3, 500))
+    {
+        scale.set_scale(CALIBRATION_FACTOR);
+        debugln("\nTare... remove any weights from the scale.");
+        scale.tare(20);
+        debugln("Tare done...");
+    }
+    else
+    {
+        debugln("\nHX711 not found.");
+    }
+    fuerzaPID.SetMode(0);
 }
 
 void loop()
@@ -352,13 +396,19 @@ void loop()
     case 5:
     {
         delay(menuDelayTime);
-        calibrar();
+        calibrarMotores();
         break;
     }
     case 6:
     {
         delay(menuDelayTime);
-        verPeso();
+        calibrarPID();
+        break;
+    }
+    case 7:
+    {
+        delay(menuDelayTime);
+        calibrarCelda();
         break;
     }
     default: // Do the normal program functions with ArduinoMenu
@@ -553,42 +603,69 @@ void homing()
     mainMenu.dirty = true;
 }
 
-void calibrar()
+void calibrarMotores()
 {
     exitMenuOptions = 0;
-    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    AccelStepper stp;
+    if (ejeACalibrar == 1)
+    {
+        stp = stepperX;
+    }
+    else
+    {
+        stp = stepperY;
+    }
+    stp.setSpeed(mmxm2stepxs(velocidad));
     debugf("cant veces %d, pasosxmm %d, cantmm %d mm %d step\n", cantVeces, pasosPorMm, cantMm, mm2step(cantMm));
     debugf("velocidad %d mmxm, %f pxs\n", velocidad, mmxm2stepxs(velocidad));
-    stepperX.setAcceleration(4 * maxSpeedX);
+    stp.setAcceleration(4 * maxSpeedX);
 
     for (int i = 0; i < cantVeces; i++)
     {
-        // stepperX.move(pasosPorMm * cantMm);
-        // stepperX.runToPosition();
+        // stp.move(pasosPorMm * cantMm);
+        // stp.runToPosition();
 
-        // stepperX.move(-pasosPorMm * cantMm);
-        // stepperX.runToPosition();
+        // stp.move(-pasosPorMm * cantMm);
+        // stp.runToPosition();
         // debugln("loop 1");
 
-        stepperX.move(mm2step(cantMm));
-        stepperX.runToPosition();
+        stp.move(mm2step(cantMm));
+        stp.runToPosition();
         delay(1000);
-        stepperX.move(-mm2step(cantMm));
-        stepperX.runToPosition();
+        stp.move(-mm2step(cantMm));
+        stp.runToPosition();
         delay(1000);
         debugln("loop 2");
     }
     mainMenu.dirty = true;
 }
 
-// 500g
-// #define CALIBRATION_FACTOR 50100
-// 100g
-// #define CALIBRATION_FACTOR 10297
-// 1000g
-#define CALIBRATION_FACTOR 10180500
+void calibrarPID()
+{
+    exitMenuOptions = 0;
+    gfx.fillScreen(TFT_BLACK);
+    gfx.setCursor(120, 60);
+    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+    gfx.setTextSize(2);
+    gfx.drawCentreString("Peso", 120, 30, 1);
+    gfx.setTextPadding(100);
 
-void verPeso()
+    gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
+
+    fuerzaPID.SetMode(AUTOMATIC);
+
+    while (digitalRead(joySW))
+    {
+        fuerzaInput = 100000 * scale.get_units(1); // gramos
+        fuerzaPID.Compute();
+        stepperY.setSpeed(fuerzaOutput);
+        stepperY.runSpeed();
+        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+    }
+    // debugf("peso %f\n", reading);
+}
+
+void calibrarCelda()
 {
     exitMenuOptions = 0;
     gfx.fillScreen(TFT_BLACK);
@@ -620,7 +697,6 @@ void verPeso()
     {
         debugln("\nHX711 not found.");
     }
-    delay(1000);
     gfx.setTextPadding(0);
     gfx.setTextSize(1);
     mainMenu.dirty = true;
