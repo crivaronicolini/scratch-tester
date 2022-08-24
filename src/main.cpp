@@ -205,9 +205,16 @@ MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, noSt
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
+MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, noStyle,
+     OP("Calibrar PID", calibrarPID, enterEvent),
+     FIELD(Kp, "Proporcional: ", "", 0, 10, 1, 0, doNothing, noEvent, noStyle),
+     FIELD(Ki, "Integrador: ", "", 0, 10, 1, 0, doNothing, noEvent, noStyle),
+     FIELD(Kd, "Derivador: ", "", 0, 10, 1, 0, doNothing, noEvent, noStyle),
+     EXIT("<- Volver"));
+
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, noStyle,
      OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
-     OP("Calibrar PID", calibrarPID, enterEvent),
+     SUBMENU(subMenuCalibrarPID),
      SUBMENU(subMenuCalibrarMotores),
      EXIT("<- Volver"));
 
