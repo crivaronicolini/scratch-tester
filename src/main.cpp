@@ -15,6 +15,7 @@
 #include <menuIO/serialOut.h>
 #include <menuIO/serialIn.h>
 
+#include <TMCStepper.h>
 #include <AccelStepper.h>
 
 #include <HX711.h>
@@ -60,26 +61,35 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define fontH 15
 
 // Declare pins for rotary encoder
-#define encA 36
-#define encB 39
-#define encBtn 4
+#define encB 36 // dt
+#define encA 39 // clk
+#define encBtn 34
 // steps per detent
 #define encSteps 4
 
 // Declare pins for joystick
-#define joyX 34
 #define joyY 35
-#define joySW 4 // por ahi puedo usar el mismo pin que el encoder
+#define joyX 32
+#define joySW 34 // por ahi puedo usar el mismo pin que el encoder
 
-#define stopSW 32
+#define stopSW 0
 
 // motor pins
-#define dirX 33
-#define stepX 25
+#define dirX 4 // podrian ser del lado derecho, TODO probar con 22 Y 21, LO PONGO EN EL ESQUEMA
+#define stepX 16
+#define dirY 21
+#define stepY 22
+
+#define SW_MISO 19 // Software Master In Slave Out (MISO)
+#define CS_PINX 17 // Chip select
+#define CS_PINY 5 // Chip select CAMBIAR A 5
+#define SW_SCK 18  // Software Slave Clock (SCK)
+#define SW_MOSI 23 // Software Master Out Slave In (MOSI)
+#define R_SENSE 0.11f
 
 // HX711
-#define load 21
-#define SCK 0
+#define load 33
+#define SCK 25
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -113,7 +123,11 @@ unsigned long last_input_time = 0;
 // params botones
 int joySW_status = 1;
 
+TMC2130Stepper driverX = TMC2130Stepper(CS_PINX, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
+TMC2130Stepper driverY = TMC2130Stepper(CS_PINY, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
+
 AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
+AccelStepper stepperY(AccelStepper::DRIVER, stepY, dirY);
 
 // Declare the clickencoder
 // Disable doubleclicks in setup makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
@@ -249,7 +263,32 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 void setup()
 {
     Serial.begin(115200);
-    delay(1000);
+    stepperX.setMaxSpeed(maxSpeedX);
+    stepperX.setAcceleration(10000);
+    // pinMode(CS_PIN,OUTPUT);
+    // digitalWrite(CS_PIN, LOW);
+    driverX.begin();          // Initiate pins and registeries
+    driverX.rms_current(600); // Set stepper current to 600mA. The command is the same as command TMC2130.setCurrent(600, 0.11, 0.5);
+    driverX.en_pwm_mode(1);   // Enable extremely quiet stepping
+    driverX.pwm_autoscale(1);
+    driverX.microsteps(16);
+
+    stepperY.setMaxSpeed(maxSpeedX);
+    stepperY.setAcceleration(10000);
+    // pinMode(CS_PIN,OUTPUT);
+    // digitalWrite(CS_PIN, LOW);
+    driverY.begin();          // Initiate pins and registeries
+    driverY.rms_current(600); // Set stepper current to 600mA. The command is the same as command TMC2130.setCurrent(600, 0.11, 0.5);
+    driverY.en_pwm_mode(1);   // Enable extremely quiet stepping
+    driverY.pwm_autoscale(1);
+    driverY.microsteps(16);
+    // digitalWrite(CS_PIN, HIGH);
+    // delay(1000);
+
+    stepperX.move(100 * 16);
+    stepperX.runToPosition();
+    stepperY.move(100 * 16);
+    stepperY.runToPosition();
 
     clickEncoder.setAccelerationEnabled(true);
     clickEncoder.setDoubleClickEnabled(false); // Disable doubleclicks makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
@@ -260,10 +299,12 @@ void setup()
     timerAlarmWrite(timer, 1000, true);
     timerAlarmEnable(timer);
 
+    // pinMode(5, OUTPUT);
+    // digitalWrite(5, LOW);
     gfx.init();         // Initialize the display
     gfx.setRotation(1); // Set the rotation (0-3) to vertical
     debugln("Initialized display");
-    gfx.fillScreen(TFT_BLACK);
+    // gfx.fillScreen(TFT_BLACK);
     gfx.fillScreen(TFT_WHITE);
     debugln("done");
 
@@ -271,11 +312,8 @@ void setup()
     //  nav.timeOut = 60;  // Timeout after 60 seconds of inactivity
     //  nav.idleOn(); // Start with the main screen and not the menu
 
-    stepperX.setMaxSpeed(maxSpeedX);
-    stepperX.setAcceleration(10000);
     pinMode(joySW, INPUT_PULLUP);
     pinMode(encBtn, INPUT_PULLUP);
-
     scale.begin(load, SCK);
 }
 
@@ -345,10 +383,22 @@ void definirOrigen()
     {
         suma += analogRead(joyX);
     }
-    float bufferMax = (suma / cantidad) + 100;
-    float bufferMin = (suma / cantidad) - 100;
-    debugf("buffer min: %f\n", bufferMin);
+    float bufferMaxX = (suma / cantidad) + 100;
+    float bufferMinX = (suma / cantidad) - 100;
+    suma = 0;
+    cantidad = 50;
+    for (int i = 0; i < cantidad; i++)
+    {
+        suma += analogRead(joyY);
+    }
+    float bufferMaxY = (suma / cantidad) + 100;
+    float bufferMinY = (suma / cantidad) - 100;
+    debugf("buffer maxX: %f\n", bufferMaxX);
+    debugf("buffer minX: %f\n", bufferMinX);
+    debugf("buffer maxY: %f\n", bufferMaxY);
+    debugf("buffer minY: %f\n", bufferMinY);
     stepperX.setAcceleration(4 * maxSpeedX);
+    stepperY.setAcceleration(4 * maxSpeedX);
 
     while (digitalRead(joySW))
     {
@@ -361,40 +411,79 @@ void definirOrigen()
         if (current_time - last_input_time > INPUT_READ_INTERVAL)
         {
             int joyX_value = analogRead(joyX);
+            int joyY_value = analogRead(joyY);
             // Map the raw analog value to speed range from -maxSpeedX to maxSpeedX
-            int desired_speed = map(joyX_value, 0, 4095, -maxSpeedX, maxSpeedX);
-            // debugln(desired_speed);
+            int desired_speedX = map(joyX_value, 0, 4095, -maxSpeedX, maxSpeedX);
+            int desired_speedY = map(joyY_value, 0, 4095, -maxSpeedX, maxSpeedX);
+            // debugln(desired_speedX);
 
             // Based on the input, set targets and max speed
-            stepperX.setMaxSpeed(abs(desired_speed));
-            debugf("speed %d\n", desired_speed);
-            debugf("analog %d\n", joyX_value);
-            if (joyX_value > bufferMin && bufferMax > joyX_value)
+            stepperX.setMaxSpeed(abs(desired_speedX));
+            stepperY.setMaxSpeed(abs(desired_speedY));
+            debugf("X %d; Y %d\n", joyX_value, joyY_value);
+
+            if (not(joyX_value > bufferMinX && bufferMaxX > joyX_value))
             {
-                debugln("skip");
-                continue;
+                // {
+                //     // debugln("skip");
+                //     continue;
+                // }
+                // if ((desired_speedX == 0 && stepperX.speed() == 0) || (desired_speedY == 0 && stepperY.speed() == 0))
+                // {
+                //     // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
+                //     // stepperX.setCurrentPosition(0);
+                //     debugf("Posicion X %d\n", stepperX.currentPosition());
+                //     debugf("Posicion Y %d\n", stepperY.currentPosition());
+                //     continue;
+                // }
+                if (desired_speedX < 0)
+                {
+                    debugln("X negativo");
+                    // debugf("X speed %d\n", desired_speedX);
+                    // debugf("X analog %d\n", joyX_value);
+                    // debugf("Y speed %d\n", desired_speedY);
+                    // debugf("Y analog %d\n", joyY_value);
+                    stepperX.moveTo(-1000000000);
+                }
+                else if (desired_speedX > 0)
+                {
+                    debugln("X positivo");
+                    // debugf("X speed %d\n", desired_speedX);
+                    // debugf("X analog %d\n", joyX_value);
+                    // debugf("Y speed %d\n", desired_speedY);
+                    // debugf("Y analog %d\n", joyY_value);
+                    stepperX.moveTo(1000000000);
+                }
             }
-            else if (desired_speed == 0 && stepperX.speed() == 0)
+            if (not(joyY_value > bufferMinY && bufferMaxY > joyY_value))
             {
-                // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
-                // stepperX.setCurrentPosition(0);
-                debugf("Posicion %d\n", stepperX.currentPosition());
+                if (desired_speedY < 0)
+                {
+                    debugln("Y negativo");
+                    // debugf("X speed %d\n", desired_speedX);
+                    // debugf("X analog %d\n", joyX_value);
+                    // debugf("Y speed %d\n", desired_speedY);
+                    // debugf("Y analog %d\n", joyY_value);
+                    stepperY.moveTo(-1000000000);
+                }
+                else if (desired_speedY > 0)
+                {
+                    debugln("Y positivo");
+                    // debugf("X speed %d\n", desired_speedX);
+                    // debugf("X analog %d\n", joyX_value);
+                    // debugf("Y speed %d\n", desired_speedY);
+                    // debugf("Y analog %d\n", joyY_value);
+                    stepperY.moveTo(1000000000);
+                }
+                last_input_time = current_time;
+                debugf("\n");
             }
-            else if (desired_speed < 0)
-            {
-                debugln("negativo");
-                stepperX.moveTo(-1000000000);
-            }
-            else if (desired_speed > 0)
-            {
-                debugln("positivo");
-                stepperX.moveTo(1000000000);
-            }
-            last_input_time = current_time;
         }
         stepperX.run();
+        stepperY.run();
     }
     stepperX.setCurrentPosition(0);
+    stepperY.setCurrentPosition(0);
     mainMenu.dirty = true; // Force the main menu to redraw itself
 }
 
@@ -493,9 +582,9 @@ void calibrar()
 }
 
 // 500g
-#define CALIBRATION_FACTOR 50100
+// #define CALIBRATION_FACTOR 50100
 // 100g
-#define CALIBRATION_FACTOR 10297
+// #define CALIBRATION_FACTOR 10297
 // 1000g
 #define CALIBRATION_FACTOR 10180500
 
@@ -503,7 +592,6 @@ void verPeso()
 {
     exitMenuOptions = 0;
     gfx.fillScreen(TFT_BLACK);
-    gfx.setCursor(0, 0, 2);
     gfx.setCursor(120, 60);
     gfx.setTextColor(TFT_WHITE, TFT_BLACK);
     gfx.setTextSize(2);
