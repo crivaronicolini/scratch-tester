@@ -127,6 +127,7 @@ int pasosPorMm = 1600;
 // params motores
 // int maxSpeedX = 25000;
 int maxSpeedX = 5000;
+int accelerationX = 1000;
 const int MICROSTEP = 32;
 
 // params tiempo
@@ -256,7 +257,7 @@ void setup()
 {
     Serial.begin(115200);
     stepperX.setMaxSpeed(maxSpeedX);
-    stepperX.setAcceleration(10000);
+    stepperX.setAcceleration(accelerationX);
     // pinMode(CS_PIN,OUTPUT);
     // digitalWrite(CS_PIN, LOW);
     driverX.begin();          // Initiate pins and registeries
@@ -266,7 +267,7 @@ void setup()
     driverX.microsteps(16);
 
     stepperY.setMaxSpeed(maxSpeedX);
-    stepperY.setAcceleration(10000);
+    stepperY.setAcceleration(accelerationX);
     // pinMode(CS_PIN,OUTPUT);
     // digitalWrite(CS_PIN, LOW);
     driverY.begin();          // Initiate pins and registeries
@@ -305,6 +306,8 @@ void setup()
     //  nav.idleOn(); // Start with the main screen and not the menu
 
     pinMode(encBtn, INPUT_PULLUP);
+    pinMode(stopSW, INPUT_PULLUP);
+    attachInterrupt(stopSW, emergencyStop, RISING);
 
     scale.begin(load, SCK);
     if (scale.wait_ready_retry(3, 500))
@@ -627,4 +630,35 @@ result calibrarCelda()
 void IRAM_ATTR onTimer()
 {
     clickEncoder.service();
+}
+
+void IRAM_ATTR emergencyStop()
+{
+    int speedX = stepperX.speed();
+    stepperX.setAcceleration(accelerationX * 10);
+    stepperX.stop();
+    int speedY = stepperY.speed();
+    stepperY.setAcceleration(accelerationX * 10);
+    stepperY.stop();
+
+    stepperX.setAcceleration(accelerationX);
+    stepperY.setAcceleration(accelerationX);
+    if (speedX < 0)
+    {
+        stepperX.move(mm2step(5));
+    }
+    else if (speedX > 0)
+    {
+        stepperX.move(mm2step(5));
+    }
+
+    if (speedY < 0)
+    {
+        stepperY.move(mm2step(5));
+    }
+    else if (speedY > 0)
+    {
+        stepperY.move(mm2step(5));
+    }
+    debugln("Freno de emergencia");
 }
