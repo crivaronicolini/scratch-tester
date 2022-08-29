@@ -112,8 +112,8 @@ int menuDelayTime = 100;
 // params medicion
 int fuerzaInicial = 0; // N
 int fuerzaFinal = 1;   // N
-int velocidad = 100;   // mm x minuto
-int largo = 10;        // mm
+int velocidad = 400;   // mm x minuto
+int largo = 5;         // mm
 
 // params PID
 double fuerzaSetpoint = fuerzaFinal * 102, fuerzaInput, fuerzaOutput;
@@ -394,34 +394,14 @@ result definirOrigen()
 
             if (not(joyX_value > bufferMinX && bufferMaxX > joyX_value))
             {
-                // {
-                //     // debugln("skip");
-                //     continue;
-                // }
-                // if ((desired_speedX == 0 && stepperX.speed() == 0) || (desired_speedY == 0 && stepperY.speed() == 0))
-                // {
-                //     // Prevent running off the end of the position range, quizas no lo necesito, interfiere con el posicionamiento
-                //     // stepperX.setCurrentPosition(0);
-                //     debugf("Posicion X %d\n", stepperX.currentPosition());
-                //     debugf("Posicion Y %d\n", stepperY.currentPosition());
-                //     continue;
-                // }
                 if (desired_speedX < 0)
                 {
                     debugln("X negativo");
-                    // debugf("X speed %d\n", desired_speedX);
-                    // debugf("X analog %d\n", joyX_value);
-                    // debugf("Y speed %d\n", desired_speedY);
-                    // debugf("Y analog %d\n", joyY_value);
                     stepperX.moveTo(-1000000000);
                 }
                 else if (desired_speedX > 0)
                 {
                     debugln("X positivo");
-                    // debugf("X speed %d\n", desired_speedX);
-                    // debugf("X analog %d\n", joyX_value);
-                    // debugf("Y speed %d\n", desired_speedY);
-                    // debugf("Y analog %d\n", joyY_value);
                     stepperX.moveTo(1000000000);
                 }
             }
@@ -430,19 +410,11 @@ result definirOrigen()
                 if (desired_speedY < 0)
                 {
                     debugln("Y negativo");
-                    // debugf("X speed %d\n", desired_speedX);
-                    // debugf("X analog %d\n", joyX_value);
-                    // debugf("Y speed %d\n", desired_speedY);
-                    // debugf("Y analog %d\n", joyY_value);
                     stepperY.moveTo(-1000000000);
                 }
                 else if (desired_speedY > 0)
                 {
                     debugln("Y positivo");
-                    // debugf("X speed %d\n", desired_speedX);
-                    // debugf("X analog %d\n", joyX_value);
-                    // debugf("Y speed %d\n", desired_speedY);
-                    // debugf("Y analog %d\n", joyY_value);
                     stepperY.moveTo(1000000000);
                 }
                 last_input_time = current_time;
@@ -487,6 +459,7 @@ result medirProgreso()
     last_input_time = 0;
     gfx.fillScreen(Black);
     fuerzaPID.SetMode(AUTOMATIC);
+    fuerzaPID.SetTunings(Kp, Ki, Kd); // los aplico por si los cambie en el menu
     fuerzaPID.SetOutputLimits(-5000, 5000);
     fuerzaSetpoint = fuerzaSetpoint / 10;
     while (digitalRead(joySW))
@@ -517,7 +490,7 @@ result medirProgreso()
         gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
         stepperX.runSpeed();
         // stepperX.runSpeedToPosition();
-        debugln(stepperX.currentPosition());
+        // debugln(stepperX.currentPosition());
     }
     delay(menuDelayTime);
     debug("volviendo al origen");
@@ -599,6 +572,7 @@ result calibrarPID()
 
     fuerzaPID.SetMode(AUTOMATIC);
     fuerzaPID.SetOutputLimits(-5000, 5000);
+    fuerzaPID.SetTunings(Kp, Ki, Kd);
     int n = 0;
     while (digitalRead(joySW))
     {
