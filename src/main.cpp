@@ -118,6 +118,7 @@ int largo = 10;        // mm
 // params PID
 double fuerzaSetpoint = fuerzaFinal * 102, fuerzaInput, fuerzaOutput;
 double Kp = 2, Ki = 5, Kd = 1;
+int TOL = 20;
 
 // params calibracion
 int cantVeces = 2;
@@ -161,6 +162,7 @@ result homing();
 result calibrarMotores();
 result calibrarPID();
 result calibrarCelda();
+void IRAM_ATTR emergencyStop();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -264,7 +266,7 @@ void setup()
     driverX.rms_current(600); // Set stepper current to 600mA. The command is the same as command TMC2130.setCurrent(600, 0.11, 0.5);
     driverX.en_pwm_mode(1);   // Enable extremely quiet stepping
     driverX.pwm_autoscale(1);
-    driverX.microsteps(16);
+    driverX.microsteps(MICROSTEP);
 
     stepperY.setMaxSpeed(maxSpeedX);
     stepperY.setAcceleration(accelerationX);
@@ -274,13 +276,13 @@ void setup()
     driverY.rms_current(600); // Set stepper current to 600mA. The command is the same as command TMC2130.setCurrent(600, 0.11, 0.5);
     driverY.en_pwm_mode(1);   // Enable extremely quiet stepping
     driverY.pwm_autoscale(1);
-    driverY.microsteps(16);
+    driverY.microsteps(MICROSTEP);
     // digitalWrite(CS_PIN, HIGH);
     // delay(1000);
 
-    stepperX.move(100 * 16);
+    stepperX.move(100 * MICROSTEP);
     stepperX.runToPosition();
-    stepperY.move(100 * 16);
+    stepperY.move(100 * MICROSTEP);
     stepperY.runToPosition();
 
     clickEncoder.setAccelerationEnabled(true);
@@ -479,11 +481,26 @@ result medirProgreso()
     exitMenuOptions = 0; // Return to the menu
     delay(menuDelayTime);
     float largoSteps = mm2step(largo);
-    // stepperX.setSpeed(mmxm2stepxs(velocidad));
-    stepperX.setSpeed(10000000);
+    stepperX.setSpeed(mmxm2stepxs(velocidad));
+    // stepperX.setSpeed(10000000);
     stepperX.move(largoSteps);
     last_input_time = 0;
     gfx.fillScreen(Black);
+    fuerzaPID.SetMode(AUTOMATIC);
+    fuerzaPID.SetOutputLimits(-5000, 5000);
+    fuerzaSetpoint = fuerzaSetpoint / 10;
+    while (digitalRead(joySW))
+    {
+        fuerzaInput = 100000 * scale.get_units(1); // gramos
+        fuerzaPID.Compute();
+        stepperY.setSpeed(fuerzaOutput);
+        stepperY.runSpeed();
+        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+        double error = fuerzaSetpoint - fuerzaInput;
+        if (error < TOL)
+            break;
+    }
+    fuerzaSetpoint = fuerzaSetpoint * 10;
     while (stepperX.distanceToGo() != 0)
     {
         unsigned long current_time = millis();
@@ -493,6 +510,11 @@ result medirProgreso()
             fex.drawProgressBar(20, 70, 200, 25, percent, Red, White);
             last_input_time = current_time;
         }
+        fuerzaInput = 100000 * scale.get_units(1); // gramos
+        fuerzaPID.Compute();
+        stepperY.setSpeed(fuerzaOutput);
+        stepperY.runSpeed();
+        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
         stepperX.runSpeed();
         // stepperX.runSpeedToPosition();
         debugln(stepperX.currentPosition());
@@ -576,7 +598,8 @@ result calibrarPID()
     gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
 
     fuerzaPID.SetMode(AUTOMATIC);
-
+    fuerzaPID.SetOutputLimits(-5000, 5000);
+    int n = 0;
     while (digitalRead(joySW))
     {
         fuerzaInput = 100000 * scale.get_units(1); // gramos
@@ -584,6 +607,17 @@ result calibrarPID()
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
         gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+        double error = fuerzaSetpoint - fuerzaInput;
+        if (error < TOL)
+        {
+            n++;
+            if (n = 50)
+                break;
+        }
+        else
+        {
+            n = 0;
+        }
     }
     // debugf("peso %f\n", reading);
     return proceed;
@@ -649,7 +683,7 @@ void IRAM_ATTR emergencyStop()
     }
     else if (speedX > 0)
     {
-        stepperX.move(mm2step(5));
+        stepperX.move(mm2step(-5));
     }
 
     if (speedY < 0)
@@ -658,7 +692,7 @@ void IRAM_ATTR emergencyStop()
     }
     else if (speedY > 0)
     {
-        stepperY.move(mm2step(5));
+        stepperY.move(mm2step(-5));
     }
     debugln("Freno de emergencia");
 }
