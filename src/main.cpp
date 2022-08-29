@@ -98,7 +98,7 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // 100g
 // #define CALIBRATION_FACTOR 10297
 // 1000g
-#define CALIBRATION_FACTOR 10180500
+int CALIBRATION_FACTOR = 10180500;
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -116,7 +116,7 @@ int velocidad = 400;   // mm x minuto
 int largo = 5;         // mm
 
 // params PID
-double fuerzaSetpoint = fuerzaFinal * 102, fuerzaInput, fuerzaOutput;
+double fuerzaSetpoint, fuerzaInput, fuerzaOutput;
 double Kp = 2, Ki = 5, Kd = 1;
 int TOL = 20;
 
@@ -196,11 +196,16 @@ result updateEEPROM()
 
 int ejeACalibrar = 1;
 
+MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", doNothing, noEvent, wrapStyle,
+     OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
+     FIELD(CALIBRATION_FACTOR, "Factor de calibracion:", "", 1, 15000000, 1000000, 1000, doNothing, noEvent, noStyle),
+     EXIT("<- Volver"));
+
 TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing, noEvent, noStyle,
        VALUE("X", 1, doNothing, noEvent),
        VALUE("Y", 2, doNothing, noEvent));
 
-MENU(subMenuCalibrarMotores, "Calibracion  de Motores", doNothing, noEvent, wrapStyle,
+MENU(subMenuCalibrarMotores, "Calibracion de Motores", doNothing, noEvent, wrapStyle,
      OP("Calibrar", calibrarMotores, enterEvent),
      SUBMENU(subMenuToggleEjeACalibrar),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing, noEvent, noStyle),
@@ -216,7 +221,7 @@ MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
-     OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
+     SUBMENU(subMenuCalibrarCelda),
      SUBMENU(subMenuCalibrarPID),
      SUBMENU(subMenuCalibrarMotores),
      EXIT("<- Volver"));
@@ -461,10 +466,10 @@ result medirProgreso()
     fuerzaPID.SetMode(AUTOMATIC);
     fuerzaPID.SetTunings(Kp, Ki, Kd); // los aplico por si los cambie en el menu
     fuerzaPID.SetOutputLimits(-5000, 5000);
-    fuerzaSetpoint = fuerzaSetpoint / 10;
+    fuerzaSetpoint = fuerzaFinal / 10;
     while (digitalRead(joySW))
     {
-        fuerzaInput = 100000 * scale.get_units(1); // gramos
+        fuerzaInput = 100000 * scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -473,17 +478,18 @@ result medirProgreso()
         if (error < TOL)
             break;
     }
-    fuerzaSetpoint = fuerzaSetpoint * 10;
+    int deltaF = fuerzaFinal - fuerzaInicial;
     while (stepperX.distanceToGo() != 0)
     {
+        float ratio = stepperX.currentPosition() / largoSteps;
+        fuerzaSetpoint = fuerzaInicial + (deltaF * ratio);
         unsigned long current_time = millis();
         if (current_time - last_input_time > 500)
         {
-            float percent = 100 * stepperX.currentPosition() / largoSteps;
-            fex.drawProgressBar(20, 70, 200, 25, percent, Red, White);
+            fex.drawProgressBar(20, 70, 200, 25, 100 * ratio, Red, White);
             last_input_time = current_time;
         }
-        fuerzaInput = 100000 * scale.get_units(1); // gramos
+        fuerzaInput = 100000 * scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -576,7 +582,7 @@ result calibrarPID()
     int n = 0;
     while (digitalRead(joySW))
     {
-        fuerzaInput = 100000 * scale.get_units(1); // gramos
+        fuerzaInput = 100000 * scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
