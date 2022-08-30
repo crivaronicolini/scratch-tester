@@ -57,7 +57,7 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 };
 
 // Define the width and height of the TFT and how much of it to take up
-#define GFX_WIDTH 240
+#define GFX_WIDTH 480
 #define GFX_HEIGHT 135
 #define fontW 12
 #define fontH 15
@@ -65,14 +65,14 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // Declare pins for rotary encoder
 #define encB 36 // dt
 #define encA 39 // clk
-#define encBtn 34
+#define encBtn 2
 // steps per detent
 #define encSteps 4
 
 // Declare pins for joystick
 #define joyY 35
 #define joyX 32
-#define joySW 34
+#define joySW 2
 
 #define stopSW 0
 
@@ -98,7 +98,7 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // 100g
 // #define CALIBRATION_FACTOR 10297
 // 1000g
-int CALIBRATION_FACTOR = 10180500;
+float CALIBRATION_FACTOR = 101805 / 9.8066;
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -117,8 +117,9 @@ int largo = 5;         // mm
 
 // params PID
 double fuerzaSetpoint, fuerzaInput, fuerzaOutput;
-double Kp = 2, Ki = 5, Kd = 1;
+double Kp = 0.2, Ki = 0.5, Kd = 0;
 int TOL = 20;
+float MULT = 0.2;
 
 // params calibracion
 int cantVeces = 2;
@@ -128,12 +129,13 @@ int pasosPorMm = 1600;
 // params motores
 // int maxSpeedX = 25000;
 int maxSpeedX = 5000;
-int accelerationX = 1000;
-const int MICROSTEP = 32;
+int accelerationX = 10000;
+const int MICROSTEP = 16;
 
 // params tiempo
 int INPUT_READ_INTERVAL = 100;
 unsigned long last_input_time = 0;
+unsigned long lastButtonPress = 0;
 
 // params botones
 int joySW_status = 1;
@@ -215,9 +217,10 @@ MENU(subMenuCalibrarMotores, "Calibracion de Motores", doNothing, noEvent, wrapS
 
 MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
      OP("Calibrar PID", calibrarPID, enterEvent),
-     FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0, doNothing, noEvent, noStyle),
-     FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0, doNothing, noEvent, noStyle),
-     FIELD(Kd, "Derivador: ", "", 0, 50, 1, 0, doNothing, noEvent, noStyle),
+     FIELD(MULT, "Factor:", "", 0, 100, 10, 0.25, doNothing, noEvent, noStyle),
+     FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
+     FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
+     FIELD(Kd, "Derivador: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
@@ -275,6 +278,7 @@ void setup()
 
     stepperY.setMaxSpeed(maxSpeedX);
     stepperY.setAcceleration(accelerationX);
+    stepperY.setPinsInverted(true, false, false);
     // pinMode(CS_PIN,OUTPUT);
     // digitalWrite(CS_PIN, LOW);
     driverY.begin();          // Initiate pins and registeries
@@ -287,7 +291,7 @@ void setup()
 
     stepperX.move(100 * MICROSTEP);
     stepperX.runToPosition();
-    stepperY.move(100 * MICROSTEP);
+    stepperY.move(-100 * MICROSTEP);
     stepperY.runToPosition();
 
     clickEncoder.setAccelerationEnabled(true);
@@ -306,6 +310,9 @@ void setup()
     debugln("Initialized display");
     // gfx.fillScreen(TFT_BLACK);
     gfx.fillScreen(TFT_WHITE);
+    gfx.setTextFont(1);
+    gfx.setTextSize(2);
+
     debugln("done");
 
     nav.showTitle = true; // Show titles in the menus and submenus
@@ -317,17 +324,19 @@ void setup()
     attachInterrupt(stopSW, emergencyStop, RISING);
 
     scale.begin(load, SCK);
-    if (scale.wait_ready_retry(3, 500))
-    {
-        scale.set_scale(CALIBRATION_FACTOR);
-        debugln("\nTare... remove any weights from the scale.");
-        scale.tare(20);
-        debugln("Tare done...");
-    }
-    else
-    {
-        debugln("\nHX711 not found.");
-    }
+    scale.set_scale(CALIBRATION_FACTOR);
+
+    // if (scale.wait_ready_retry(3, 500))
+    // {
+    //     scale.set_scale(CALIBRATION_FACTOR);
+    //     debugln("\nTare... remove any weights from the scale.");
+    //     scale.tare(20);
+    //     debugln("Tare done...");
+    // }
+    // else
+    // {
+    //     debugln("\nHX711 not found.");
+    // }
     fuerzaPID.SetMode(0);
 }
 
@@ -422,9 +431,9 @@ result definirOrigen()
                     debugln("Y positivo");
                     stepperY.moveTo(1000000000);
                 }
-                last_input_time = current_time;
                 debugf("\n");
             }
+            last_input_time = current_time;
         }
         stepperX.run();
         stepperY.run();
@@ -469,7 +478,7 @@ result medirProgreso()
     fuerzaSetpoint = fuerzaFinal / 10;
     while (digitalRead(joySW))
     {
-        fuerzaInput = 100000 * scale.get_units(1); // newton
+        fuerzaInput = 1000 * scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -489,7 +498,7 @@ result medirProgreso()
             fex.drawProgressBar(20, 70, 200, 25, 100 * ratio, Red, White);
             last_input_time = current_time;
         }
-        fuerzaInput = 100000 * scale.get_units(1); // newton
+        fuerzaInput = 1000 * scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -567,6 +576,7 @@ result calibrarMotores()
 result calibrarPID()
 {
     exitMenuOptions = 0;
+    delay(menuDelayTime);
     gfx.fillScreen(TFT_BLACK);
     gfx.setCursor(120, 60);
     gfx.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -575,30 +585,47 @@ result calibrarPID()
     gfx.setTextPadding(100);
 
     gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
+    scale.tare(10);
+    fuerzaSetpoint = fuerzaFinal * 1000;
 
     fuerzaPID.SetMode(AUTOMATIC);
     fuerzaPID.SetOutputLimits(-5000, 5000);
     fuerzaPID.SetTunings(Kp, Ki, Kd);
     int n = 0;
+    stepperY.setSpeed(MICROSTEP * 250);
+    stepperY.setAcceleration(accelerationX*10);
     while (digitalRead(joySW))
+    // while (1)
     {
-        fuerzaInput = 100000 * scale.get_units(1); // newton
-        fuerzaPID.Compute();
-        stepperY.setSpeed(fuerzaOutput);
-        stepperY.runSpeed();
-        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
-        double error = fuerzaSetpoint - fuerzaInput;
-        if (error < TOL)
+
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 100)
         {
-            n++;
-            if (n = 50)
-                break;
+            fuerzaInput = static_cast<double>(-1000 * scale.get_units(1)); // newton
+            fuerzaPID.Compute();
+            float speed = fuerzaOutput * MULT;
+            stepperY.move(speed);
+            last_input_time = current_time;
+            gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+            double error = fuerzaSetpoint - fuerzaInput;
+            debugf("error= %f\toutput= %f\tspeed= %f\n", error, fuerzaOutput, speed);
         }
-        else
-        {
-            n = 0;
-        }
+
+        stepperY.run();
+
+        // debugf("input= %d\toutput= %d\n", fuerzaInput, fuerzaOutput);
+        // if (error < TOL)
+        // {
+        //     n++;
+        //     if (n = 50)
+        //         break;
+        // }
+        // else
+        // {
+        //     n = 0;
+        // }
     }
+    mainMenu.dirty = true;
     // debugf("peso %f\n", reading);
     return proceed;
 }
@@ -606,6 +633,7 @@ result calibrarPID()
 result calibrarCelda()
 {
     exitMenuOptions = 0;
+    delay(menuDelayTime);
     gfx.fillScreen(TFT_BLACK);
     gfx.setCursor(120, 60);
     gfx.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -615,7 +643,7 @@ result calibrarCelda()
 
     gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
 
-    if (scale.wait_ready_retry(3, 500))
+    if (scale.wait_ready_retry(3, 1000))
     {
         scale.set_scale(CALIBRATION_FACTOR);
         // scale.set_scale();
@@ -626,7 +654,8 @@ result calibrarCelda()
         // delay(1000);
         while (digitalRead(joySW))
         {
-            long reading = 100000 * scale.get_units(1);
+            long reading = 1000 * scale.get_units(1);
+            // long reading = scale.get_units(1);
             // debugf("peso %f\n", reading);
             gfx.drawFloat(reading, 0, 100, 70, 1);
         }
@@ -635,8 +664,10 @@ result calibrarCelda()
     {
         debugln("\nHX711 not found.");
     }
+    gfx.fillScreen(TFT_BLACK);
     gfx.setTextPadding(0);
     gfx.setTextSize(1);
+    delay(1000);
     mainMenu.dirty = true;
     return proceed;
 }
