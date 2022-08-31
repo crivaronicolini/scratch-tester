@@ -1,4 +1,5 @@
 #include <Arduino.h>
+
 #include <TFT_eSPI.h>
 #include <TFT_eFEX.h>
 
@@ -136,9 +137,12 @@ const int MICROSTEP = 16;
 int INPUT_READ_INTERVAL = 100;
 unsigned long last_input_time = 0;
 unsigned long lastButtonPress = 0;
+unsigned long lastStopTime = 0;
 
 // params botones
 int joySW_status = 1;
+bool activateEmergencyStop = false;
+int buffer = 200;
 
 PID fuerzaPID(&fuerzaInput, &fuerzaOutput, &fuerzaSetpoint, Kp, Ki, Kd, DIRECT);
 
@@ -164,7 +168,10 @@ result homing();
 result calibrarMotores();
 result calibrarPID();
 result calibrarCelda();
-void IRAM_ATTR emergencyStop();
+void initMotors();
+bool emergencyStopCheck();
+void emergencyStop();
+void IRAM_ATTR emergencyStopActivate();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
@@ -266,47 +273,19 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 void setup()
 {
     Serial.begin(115200);
-    stepperX.setMaxSpeed(maxSpeedX);
-    stepperX.setAcceleration(accelerationX);
-    // pinMode(CS_PIN,OUTPUT);
-    // digitalWrite(CS_PIN, LOW);
-    driverX.begin();          // Initiate pins and registeries
-    driverX.rms_current(600); // Set stepper current to 600mA. The command is the same as command TMC2130.setCurrent(600, 0.11, 0.5);
-    driverX.en_pwm_mode(1);   // Enable extremely quiet stepping
-    driverX.pwm_autoscale(1);
-    driverX.microsteps(MICROSTEP);
 
-    stepperY.setMaxSpeed(maxSpeedX);
-    stepperY.setAcceleration(accelerationX);
-    stepperY.setPinsInverted(true, false, false);
-    // pinMode(CS_PIN,OUTPUT);
-    // digitalWrite(CS_PIN, LOW);
-    driverY.begin();          // Initiate pins and registeries
-    driverY.rms_current(600); // Set stepper current to 600mA. The command is the same as command TMC2130.setCurrent(600, 0.11, 0.5);
-    driverY.en_pwm_mode(1);   // Enable extremely quiet stepping
-    driverY.pwm_autoscale(1);
-    driverY.microsteps(MICROSTEP);
-    // digitalWrite(CS_PIN, HIGH);
-    // delay(1000);
-
-    stepperX.move(100 * MICROSTEP);
-    stepperX.runToPosition();
-    stepperY.move(-100 * MICROSTEP);
-    stepperY.runToPosition();
+    initMotors();
 
     clickEncoder.setAccelerationEnabled(true);
-    clickEncoder.setDoubleClickEnabled(false); // Disable doubleclicks makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
+    clickEncoder.setDoubleClickEnabled(false);
 
-    // // ESP32 timer
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, &onTimer, true);
     timerAlarmWrite(timer, 1000, true);
     timerAlarmEnable(timer);
 
-    // pinMode(5, OUTPUT);
-    // digitalWrite(5, LOW);
-    gfx.init();         // Initialize the display
-    gfx.setRotation(1); // Set the rotation (0-3) to vertical
+    gfx.init();
+    gfx.setRotation(1);
     debugln("Initialized display");
     // gfx.fillScreen(TFT_BLACK);
     gfx.fillScreen(TFT_WHITE);
@@ -321,22 +300,22 @@ void setup()
 
     pinMode(encBtn, INPUT_PULLUP);
     pinMode(stopSW, INPUT_PULLUP);
-    attachInterrupt(stopSW, emergencyStop, RISING);
+    attachInterrupt(stopSW, emergencyStopActivate, RISING);
 
     scale.begin(load, SCK);
     scale.set_scale(CALIBRATION_FACTOR);
 
-    // if (scale.wait_ready_retry(3, 500))
-    // {
-    //     scale.set_scale(CALIBRATION_FACTOR);
-    //     debugln("\nTare... remove any weights from the scale.");
-    //     scale.tare(20);
-    //     debugln("Tare done...");
-    // }
-    // else
-    // {
-    //     debugln("\nHX711 not found.");
-    // }
+    if (scale.wait_ready_retry(3, 500))
+    {
+        scale.set_scale(CALIBRATION_FACTOR);
+        debugln("\nTare... remove any weights from the scale.");
+        scale.tare(20);
+        debugln("Tare done...");
+    }
+    else
+    {
+        debugln("\nHX711 not found.");
+    }
     fuerzaPID.SetMode(0);
 }
 
@@ -367,16 +346,15 @@ result definirOrigen()
     {
         suma += analogRead(joyX);
     }
-    float bufferMaxX = (suma / cantidad) + 100;
-    float bufferMinX = (suma / cantidad) - 100;
+    float bufferMaxX = (suma / cantidad) + buffer;
+    float bufferMinX = (suma / cantidad) - buffer;
     suma = 0;
-    cantidad = 50;
     for (int i = 0; i < cantidad; i++)
     {
         suma += analogRead(joyY);
     }
-    float bufferMaxY = (suma / cantidad) + 100;
-    float bufferMinY = (suma / cantidad) - 100;
+    float bufferMaxY = (suma / cantidad) + buffer;
+    float bufferMinY = (suma / cantidad) - buffer;
     debugf("buffer maxX: %f\n", bufferMaxX);
     debugf("buffer minX: %f\n", bufferMinX);
     debugf("buffer maxY: %f\n", bufferMaxY);
@@ -478,6 +456,10 @@ result medirProgreso()
     fuerzaSetpoint = fuerzaFinal / 10;
     while (digitalRead(joySW))
     {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
         fuerzaInput = 1000 * scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
@@ -490,6 +472,10 @@ result medirProgreso()
     int deltaF = fuerzaFinal - fuerzaInicial;
     while (stepperX.distanceToGo() != 0)
     {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
         float ratio = stepperX.currentPosition() / largoSteps;
         fuerzaSetpoint = fuerzaInicial + (deltaF * ratio);
         unsigned long current_time = millis();
@@ -523,12 +509,20 @@ result homing()
     stepperX.move(-mm2step(300));
     while (digitalRead(stopSW))
     {
-        stepperX.runSpeedToPosition();
+        if (emergencyStopCheck())
+        {
+            return proceed;
+        }
+        stepperX.runSpeed();
     }
     stepperX.move(mm2step(300));
     while (!digitalRead(stopSW))
     {
-        stepperX.runSpeedToPosition();
+        if (emergencyStopCheck())
+        {
+            return proceed;
+        }
+        stepperX.runSpeed();
     }
     stepperX.setCurrentPosition(0);
     mainMenu.dirty = true;
@@ -563,9 +557,25 @@ result calibrarMotores()
 
         stp.move(mm2step(cantMm));
         stp.runToPosition();
+        while (stp.distanceToGo() != 0)
+        {
+            if (emergencyStopCheck())
+            {
+                break;
+            }
+            stp.run();
+        }
+
         delay(1000);
         stp.move(-mm2step(cantMm));
-        stp.runToPosition();
+        while (stp.distanceToGo() != 0)
+        {
+            if (emergencyStopCheck())
+            {
+                break;
+            }
+            stp.run();
+        }
         delay(1000);
         debugln("loop 2");
     }
@@ -585,7 +595,7 @@ result calibrarPID()
     gfx.setTextPadding(100);
 
     gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
-    scale.tare(10);
+    // scale.tare(10);
     fuerzaSetpoint = fuerzaFinal * 1000;
 
     fuerzaPID.SetMode(AUTOMATIC);
@@ -593,11 +603,14 @@ result calibrarPID()
     fuerzaPID.SetTunings(Kp, Ki, Kd);
     int n = 0;
     stepperY.setSpeed(MICROSTEP * 250);
-    stepperY.setAcceleration(accelerationX*10);
+    stepperY.setAcceleration(accelerationX * 10);
     while (digitalRead(joySW))
     // while (1)
     {
-
+        if (emergencyStopCheck())
+        {
+            break;
+        }
         unsigned long current_time = millis();
         if (current_time - last_input_time > 100)
         {
@@ -632,6 +645,7 @@ result calibrarPID()
 
 result calibrarCelda()
 {
+    // TODO dar opcion para cambiar la calibracion
     exitMenuOptions = 0;
     delay(menuDelayTime);
     gfx.fillScreen(TFT_BLACK);
@@ -643,27 +657,12 @@ result calibrarCelda()
 
     gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
 
-    if (scale.wait_ready_retry(3, 1000))
+    while (digitalRead(joySW))
     {
-        scale.set_scale(CALIBRATION_FACTOR);
-        // scale.set_scale();
-        debugln("\nTare... remove any weights from the scale.");
-        // delay(1000);
-        scale.tare(50);
-        debugln("Tare done...");
-        // delay(1000);
-        while (digitalRead(joySW))
-        {
-            long reading = 1000 * scale.get_units(1);
-            // long reading = scale.get_units(1);
-            // debugf("peso %f\n", reading);
-            gfx.drawFloat(reading, 0, 100, 70, 1);
-        }
+        long reading = 1000 * scale.get_units(1);
+        gfx.drawFloat(reading, 0, 100, 70, 1);
     }
-    else
-    {
-        debugln("\nHX711 not found.");
-    }
+
     gfx.fillScreen(TFT_BLACK);
     gfx.setTextPadding(0);
     gfx.setTextSize(1);
@@ -671,13 +670,68 @@ result calibrarCelda()
     mainMenu.dirty = true;
     return proceed;
 }
+
+void initMotors()
+{
+    stepperX.setMaxSpeed(maxSpeedX);
+    stepperX.setAcceleration(accelerationX);
+
+    driverX.begin();
+    driverX.rms_current(600);
+    driverX.en_pwm_mode(1);
+    driverX.pwm_autoscale(1);
+    driverX.microsteps(MICROSTEP);
+
+    stepperY.setMaxSpeed(maxSpeedX);
+    stepperY.setAcceleration(accelerationX);
+    stepperY.setPinsInverted(true, false, false);
+
+    driverY.begin();
+    driverY.rms_current(600);
+    driverY.en_pwm_mode(1);
+    driverY.pwm_autoscale(1);
+    driverY.microsteps(MICROSTEP);
+
+    stepperX.move(50 * MICROSTEP);
+    stepperY.move(-50 * MICROSTEP);
+    while (stepperX.distanceToGo() != 0 && stepperY.distanceToGo() != 0)
+    {
+        stepperX.run();
+        stepperY.run();
+    }
+}
+
 // ESP32 timer
 void IRAM_ATTR onTimer()
 {
     clickEncoder.service();
 }
 
-void IRAM_ATTR emergencyStop()
+void IRAM_ATTR emergencyStopActivate()
+{
+    unsigned long now = millis();
+
+    if (now - lastStopTime > 100)
+    {
+        activateEmergencyStop = true;
+        lastStopTime = now;
+    }
+}
+
+bool emergencyStopCheck()
+{
+    if (activateEmergencyStop)
+    {
+        emergencyStop();
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void emergencyStop()
 {
     int speedX = stepperX.speed();
     stepperX.setAcceleration(accelerationX * 10);
@@ -705,5 +759,5 @@ void IRAM_ATTR emergencyStop()
     {
         stepperY.move(mm2step(-5));
     }
-    debugln("Freno de emergencia");
+    activateEmergencyStop = false;
 }
