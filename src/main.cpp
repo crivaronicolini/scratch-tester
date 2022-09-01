@@ -1,5 +1,6 @@
 #include <Arduino.h>
-
+#include <Preferences.h>
+Preferences prefs;
 #include <TFT_eSPI.h>
 #include <TFT_eFEX.h>
 
@@ -99,7 +100,7 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // 100g
 // #define CALIBRATION_FACTOR 10297
 // 1000g
-float CALIBRATION_FACTOR = 101805 / 9.8066;
+float CALIBRATION_FACTOR = -101.805;
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -107,7 +108,6 @@ float CALIBRATION_FACTOR = 101805 / 9.8066;
 
 // params menu
 int chooseField = 1;
-int exitMenuOptions = 0;
 int menuDelayTime = 100;
 
 // params medicion
@@ -131,7 +131,7 @@ int pasosPorMm = 1600;
 // int maxSpeedX = 25000;
 int maxSpeedX = 5000;
 int accelerationX = 10000;
-const int MICROSTEP = 16;
+int MICROSTEP = 16;
 
 // params tiempo
 int INPUT_READ_INTERVAL = 100;
@@ -160,7 +160,7 @@ ClickEncoderStream encStream(clickEncoder, 1);
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
 TFT_eSPI gfx = TFT_eSPI();
 TFT_eFEX fex = TFT_eFEX(&gfx);
-
+result updatePref();
 result medir();
 result medirProgreso();
 result definirOrigen();
@@ -168,6 +168,7 @@ result homing();
 result calibrarMotores();
 result calibrarPID();
 result calibrarCelda();
+void initPreferences();
 void initMotors();
 bool emergencyStopCheck();
 void emergencyStop();
@@ -207,7 +208,7 @@ int ejeACalibrar = 1;
 
 MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", doNothing, noEvent, wrapStyle,
      OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
-     FIELD(CALIBRATION_FACTOR, "Factor de calibracion:", "", 1, 15000000, 1000000, 1000, doNothing, noEvent, noStyle),
+     FIELD(CALIBRATION_FACTOR, "Factor de calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing, noEvent, noStyle,
@@ -237,6 +238,8 @@ MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
+     //  FIELD(Kd, "Derivador: ", "", 0, 50, 1, 5, showEvent("hola"), anyEvent, noStyle),
+     // OP("Test", testPrefs, enterEvent),
      FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
@@ -275,6 +278,7 @@ void setup()
     Serial.begin(115200);
 
     initMotors();
+    initPreferences();
 
     clickEncoder.setAccelerationEnabled(true);
     clickEncoder.setDoubleClickEnabled(false);
@@ -303,11 +307,9 @@ void setup()
     attachInterrupt(stopSW, emergencyStopActivate, RISING);
 
     scale.begin(load, SCK);
-    scale.set_scale(CALIBRATION_FACTOR);
-
     if (scale.wait_ready_retry(3, 500))
     {
-        scale.set_scale(CALIBRATION_FACTOR);
+        scale.set_scale(CALIBRATION_FACTOR / 9.8066);
         debugln("\nTare... remove any weights from the scale.");
         scale.tare(20);
         debugln("Tare done...");
@@ -322,7 +324,7 @@ void setup()
 void loop()
 {
     // Slow down the menu redraw rate
-    constexpr int menuFPS = 1000 / 30;
+    constexpr int menuFPS = 60;
     static unsigned long lastMenuFrame = -menuFPS;
     unsigned long now = millis();
 
@@ -335,10 +337,6 @@ void loop()
 
 result definirOrigen()
 {
-    exitMenuOptions = 0;
-    // Return to the menu
-    delay(menuDelayTime);
-
     // samplea 10 veces y toma el promedio para ver el cero del joystick
     int suma = 0;
     int cantidad = 50;
@@ -424,14 +422,11 @@ result definirOrigen()
 
 result medir()
 {
-    exitMenuOptions = 0; // Return to the menu
-    delay(menuDelayTime);
     float largoSteps = mm2step(largo);
     stepperX.setSpeed(mmxm2stepxs(velocidad));
     stepperX.move(largoSteps);
     stepperX.runToPosition();
     // volver a la posicion anterior
-    delay(menuDelayTime);
     stepperX.setSpeed(maxSpeedX);
     stepperX.move(-largoSteps);
     stepperX.runToPosition();
@@ -442,8 +437,6 @@ result medir()
 
 result medirProgreso()
 {
-    exitMenuOptions = 0; // Return to the menu
-    delay(menuDelayTime);
     float largoSteps = mm2step(largo);
     stepperX.setSpeed(mmxm2stepxs(velocidad));
     // stepperX.setSpeed(10000000);
@@ -460,7 +453,7 @@ result medirProgreso()
         {
             break;
         }
-        fuerzaInput = 1000 * scale.get_units(1); // newton
+        fuerzaInput = scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -484,7 +477,7 @@ result medirProgreso()
             fex.drawProgressBar(20, 70, 200, 25, 100 * ratio, Red, White);
             last_input_time = current_time;
         }
-        fuerzaInput = 1000 * scale.get_units(1); // newton
+        fuerzaInput = scale.get_units(1); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -493,7 +486,6 @@ result medirProgreso()
         // stepperX.runSpeedToPosition();
         // debugln(stepperX.currentPosition());
     }
-    delay(menuDelayTime);
     debug("volviendo al origen");
     stepperX.setSpeed(maxSpeedX);
     stepperX.move(-largoSteps);
@@ -504,7 +496,6 @@ result medirProgreso()
 
 result homing()
 {
-    exitMenuOptions = 0;
     stepperX.setSpeed(maxSpeedX / 2.0);
     stepperX.move(-mm2step(300));
     while (digitalRead(stopSW))
@@ -531,7 +522,6 @@ result homing()
 
 result calibrarMotores()
 {
-    exitMenuOptions = 0;
     AccelStepper stp;
     if (ejeACalibrar == 1)
     {
@@ -585,8 +575,6 @@ result calibrarMotores()
 
 result calibrarPID()
 {
-    exitMenuOptions = 0;
-    delay(menuDelayTime);
     gfx.fillScreen(TFT_BLACK);
     gfx.setCursor(120, 60);
     gfx.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -611,20 +599,25 @@ result calibrarPID()
         {
             break;
         }
-        unsigned long current_time = millis();
-        if (current_time - last_input_time > 100)
-        {
-            fuerzaInput = static_cast<double>(-1000 * scale.get_units(1)); // newton
-            fuerzaPID.Compute();
-            float speed = fuerzaOutput * MULT;
-            stepperY.move(speed);
-            last_input_time = current_time;
-            gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
-            double error = fuerzaSetpoint - fuerzaInput;
-            debugf("error= %f\toutput= %f\tspeed= %f\n", error, fuerzaOutput, speed);
-        }
-
-        stepperY.run();
+        // unsigned long current_time = millis();
+        // if (current_time - last_input_time > 100)
+        // {
+        //     fuerzaInput = static_cast<double>(scale.get_units(1)); // newton
+        //     fuerzaPID.Compute();
+        //     float speed = fuerzaOutput * MULT;
+        //     stepperY.move(speed);
+        //     last_input_time = current_time;
+        //     gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+        //     double error = fuerzaSetpoint - fuerzaInput;
+        //     debugf("error= %f\toutput= %f\tspeed= %f\n", error, fuerzaOutput, speed);
+        // }
+        //
+        // stepperY.run();
+        fuerzaInput = scale.get_units(1); // newton
+        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+        fuerzaPID.Compute();
+        stepperY.setSpeed(fuerzaOutput);
+        stepperY.runSpeed();
 
         // debugf("input= %d\toutput= %d\n", fuerzaInput, fuerzaOutput);
         // if (error < TOL)
@@ -646,8 +639,6 @@ result calibrarPID()
 result calibrarCelda()
 {
     // TODO dar opcion para cambiar la calibracion
-    exitMenuOptions = 0;
-    delay(menuDelayTime);
     gfx.fillScreen(TFT_BLACK);
     gfx.setCursor(120, 60);
     gfx.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -659,7 +650,7 @@ result calibrarCelda()
 
     while (digitalRead(joySW))
     {
-        long reading = 1000 * scale.get_units(1);
+        long reading =  scale.get_units(1);
         gfx.drawFloat(reading, 0, 100, 70, 1);
     }
 
@@ -698,6 +689,53 @@ void initMotors()
     {
         stepperX.run();
         stepperY.run();
+    }
+}
+
+void initPreferences()
+{
+    prefs.begin("scratch");
+    bool init = prefs.isKey("init");
+    if (init == false)
+    {
+        prefs.putFloat("Kp", Kp);
+        prefs.putFloat("Ki", Ki);
+        prefs.putFloat("Kd", Kd);
+        prefs.putFloat("TOL", TOL);
+        prefs.putFloat("MULT", MULT);
+        prefs.putFloat("CALIBRATIONFACTOR", CALIBRATION_FACTOR);
+        prefs.putInt("fuerzaInicial", fuerzaInicial);
+        prefs.putInt("ffuerzaFinal", fuerzaFinal);
+        prefs.putInt("velocidad", velocidad);
+        prefs.putInt("largo", largo);
+        prefs.putInt("cantVeces", cantVeces);
+        prefs.putInt("cantMm", cantMm);
+        prefs.putInt("pasosPorMm", pasosPorMm);
+        prefs.putInt("maxSpeedX", maxSpeedX);
+        prefs.putInt("accelerationX", accelerationX);
+        prefs.putInt("MICROSTEP", MICROSTEP);
+        prefs.putInt("buffer", buffer);
+        prefs.putBool("init", true);
+    }
+    else
+    {
+        Kp = prefs.getFloat("Kp");
+        Ki = prefs.getFloat("Ki");
+        Kd = prefs.getFloat("Kd");
+        TOL = prefs.getFloat("TOL");
+        MULT = prefs.getFloat("MULT");
+        CALIBRATION_FACTOR = prefs.getFloat("CALIBRATIONFACTOR");
+        fuerzaInicial = prefs.getInt("fuerzaInicial");
+        fuerzaFinal = prefs.getInt("fuerzaFinal");
+        velocidad = prefs.getInt("velocidad");
+        largo = prefs.getInt("largo");
+        cantVeces = prefs.getInt("cantVeces");
+        cantMm = prefs.getInt("cantMm");
+        pasosPorMm = prefs.getInt("pasosPorMm");
+        maxSpeedX = prefs.getInt("maxSpeedX");
+        accelerationX = prefs.getInt("accelerationX");
+        MICROSTEP = prefs.getInt("MICROSTEP");
+        buffer = prefs.getInt("buffer");
     }
 }
 
