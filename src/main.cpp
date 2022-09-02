@@ -95,12 +95,16 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define load 33
 #define SCK 25
 
+// params celda
 // 500g
 // #define CALIBRATION_FACTOR 50100
 // 100g
 // #define CALIBRATION_FACTOR 10297
 // 1000g
 float CALIBRATION_FACTOR = -101.805;
+long reading = -1;
+int numSamples = 1;
+bool calibrarCelda = false;
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
 #define BACKCOLOR TFT_BLACK
@@ -167,7 +171,8 @@ result definirOrigen();
 result homing();
 result calibrarMotores();
 result calibrarPID();
-result calibrarCelda();
+long leerCelda();
+result toggleCalibracionCelda();
 void initPreferences();
 void initMotors();
 bool emergencyStopCheck();
@@ -206,9 +211,10 @@ result updateEEPROM()
 
 int ejeACalibrar = 1;
 
-MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", doNothing, noEvent, wrapStyle,
-     OP("Calibrar Celda de Carga", calibrarCelda, enterEvent),
+MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", toggleCalibracionCelda,enterEvent|exitEvent, wrapStyle,
+     FIELD(reading, "Fuerza sensor:","N",-1,100000,0,0,doNothing, noEvent, noStyle),
      FIELD(CALIBRATION_FACTOR, "Factor de calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(numSamples, "Numero de muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing, noEvent, noStyle,
@@ -330,6 +336,9 @@ void loop()
 
     if (now - lastMenuFrame >= menuFPS)
     {
+        if (calibrarCelda){
+            reading = leerCelda();
+        }
         lastMenuFrame = millis();
         nav.poll();
     }
@@ -453,7 +462,7 @@ result medirProgreso()
         {
             break;
         }
-        fuerzaInput = scale.get_units(1); // newton
+        fuerzaInput = scale.get_units(numSamples); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -477,7 +486,7 @@ result medirProgreso()
             fex.drawProgressBar(20, 70, 200, 25, 100 * ratio, Red, White);
             last_input_time = current_time;
         }
-        fuerzaInput = scale.get_units(1); // newton
+        fuerzaInput = scale.get_units(numSamples); // newton
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
@@ -602,7 +611,7 @@ result calibrarPID()
         // unsigned long current_time = millis();
         // if (current_time - last_input_time > 100)
         // {
-        //     fuerzaInput = static_cast<double>(scale.get_units(1)); // newton
+        //     fuerzaInput = static_cast<double>(scale.get_units(numSamples)); // newton
         //     fuerzaPID.Compute();
         //     float speed = fuerzaOutput * MULT;
         //     stepperY.move(speed);
@@ -613,7 +622,7 @@ result calibrarPID()
         // }
         //
         // stepperY.run();
-        fuerzaInput = scale.get_units(1); // newton
+        fuerzaInput = scale.get_units(numSamples); // newton
         gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
@@ -636,31 +645,15 @@ result calibrarPID()
     return proceed;
 }
 
-result calibrarCelda()
-{
-    // TODO dar opcion para cambiar la calibracion
-    gfx.fillScreen(TFT_BLACK);
-    gfx.setCursor(120, 60);
-    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    gfx.setTextSize(2);
-    gfx.drawCentreString("Peso", 120, 30, 1);
-    gfx.setTextPadding(100);
-
-    gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
-
-    while (digitalRead(joySW))
-    {
-        long reading =  scale.get_units(1);
-        gfx.drawFloat(reading, 0, 100, 70, 1);
-    }
-
-    gfx.fillScreen(TFT_BLACK);
-    gfx.setTextPadding(0);
-    gfx.setTextSize(1);
-    delay(1000);
-    mainMenu.dirty = true;
-    return proceed;
+long leerCelda(){
+    return  scale.get_units(numSamples);
 }
+
+result toggleCalibracionCelda()
+{
+    calibrarCelda = ~calibrarCelda;
+    return proceed;
+}    
 
 void initMotors()
 {
