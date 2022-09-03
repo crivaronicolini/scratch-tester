@@ -211,7 +211,7 @@ result updateEEPROM()
 
 int ejeACalibrar = 1;
 
-MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", toggleCalibracionCelda,enterEvent|exitEvent, wrapStyle,
+MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", toggleCalibracionCelda,(eventMask)(enterEvent|exitEvent), wrapStyle,
      FIELD(reading, "Fuerza sensor:","N",-1,100000,0,0,doNothing, noEvent, noStyle),
      FIELD(CALIBRATION_FACTOR, "Factor de calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(numSamples, "Numero de muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
@@ -584,14 +584,14 @@ result calibrarMotores()
 
 result calibrarPID()
 {
-    gfx.fillScreen(TFT_BLACK);
-    gfx.setCursor(120, 60);
-    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    gfx.setTextSize(2);
-    gfx.drawCentreString("Peso", 120, 30, 1);
-    gfx.setTextPadding(100);
-
-    gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
+    // gfx.fillScreen(TFT_BLACK);
+    // gfx.setCursor(120, 60);
+    // gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+    // gfx.setTextSize(2);
+    // gfx.drawCentreString("Peso", 120, 30, 1);
+    // gfx.setTextPadding(100);
+    //
+    // gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
     // scale.tare(10);
     fuerzaSetpoint = fuerzaFinal * 1000;
 
@@ -623,7 +623,7 @@ result calibrarPID()
         //
         // stepperY.run();
         fuerzaInput = scale.get_units(numSamples); // newton
-        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+        // gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
         fuerzaPID.Compute();
         stepperY.setSpeed(fuerzaOutput);
         stepperY.runSpeed();
