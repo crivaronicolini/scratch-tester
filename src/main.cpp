@@ -164,7 +164,10 @@ ClickEncoderStream encStream(clickEncoder, 1);
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
 TFT_eSPI gfx = TFT_eSPI();
 TFT_eFEX fex = TFT_eFEX(&gfx);
-result updatePref();
+void updatePrefs(float value, const char* key);
+void updatePrefs(int value, const char* key);
+void updatePrefs(double value, const char* key);
+void testPrefs();
 result medir();
 result medirProgreso();
 result definirOrigen();
@@ -231,6 +234,7 @@ MENU(subMenuCalibrarMotores, "Calibracion de Motores", doNothing, noEvent, wrapS
 
 MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
      OP("Calibrar PID", calibrarPID, enterEvent),
+     FIELD(fuerzaInput, "Fuerza sensor:","N",-100000,100000,0,0,doNothing, noEvent, noStyle),
      FIELD(MULT, "Factor:", "", 0, 100, 10, 0.25, doNothing, noEvent, noStyle),
      FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
      FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
@@ -593,6 +597,10 @@ result calibrarPID()
     //
     // gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
     // scale.tare(10);
+    updatePrefs(Kp,"Kp");
+    updatePrefs(Kd,"Kd");
+    updatePrefs(Ki,"Ki");
+    updatePrefs(MULT,"MULT");
     fuerzaSetpoint = fuerzaFinal * 1000;
 
     fuerzaPID.SetMode(AUTOMATIC);
@@ -730,6 +738,30 @@ void initPreferences()
         MICROSTEP = prefs.getInt("MICROSTEP");
         buffer = prefs.getInt("buffer");
     }
+}
+
+void updatePrefs(int value, const char* key)
+{
+    debugf("guardando %s:%d", key, value);
+    prefs.putInt(key,value);
+}
+
+void updatePrefs(double value, const char* key)
+{
+    debugf("guardando %s:%d", key, value);
+    prefs.putInt(key,value);
+}
+
+void updatePrefs(float value, const char* key)
+{
+    debugf("guardando %s:%d", key, value);
+    prefs.putFloat(key,value);
+}
+
+void testPrefs()
+{
+    debugf("\nKd guardada=%f\tKd=%f\n", prefs.getFloat("Kd"), Kd);
+    // updatePrefs({"Kd", "Ki"}, {Kd, Ki}, 2);
 }
 
 // ESP32 timer
