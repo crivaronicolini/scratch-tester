@@ -103,7 +103,7 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // 1000g
 float CALIBRATION_FACTOR = -101.805;
 long reading = -1;
-int numSamples = 3;
+int numSamples = 1;
 bool calibrarCelda = false;
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
@@ -117,7 +117,7 @@ int menuDelayTime = 100;
 // params medicion
 int fuerzaInicial = 0; // N
 int fuerzaFinal = 1;   // N
-int velocidad = 400;   // mm x minuto
+int velocidad = 100;   // mm x minuto
 int largo = 5;         // mm
 
 // params PID
@@ -705,6 +705,7 @@ result calibrarPID()
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
     fuerzaPID.SetTunings(Kpf, Kif, Kdf);
     fuerzaPID.SetSampleTime(150);
+    stepperX.setSpeed(maxSpeedX*4);
     stepperY.setAcceleration(accelerationX * 10);
     while (digitalRead(joySW))
     {
@@ -713,16 +714,16 @@ result calibrarPID()
             break;
         }
         unsigned long current_time = millis();
-        if (current_time - last_input_time > 150)
+        if (current_time - last_input_time > 350)
         {
             fuerzaInput = scale.get_units(numSamples); // newton
             if (fuerzaInput >200){ fast = false;break;}
             fuerzaPID.Compute();
             stepperY.move(fuerzaOutput);
             double error = fuerzaSetpoint - fuerzaInput;
-            gfx.drawFloat(fuerzaInput, 3, 100, 50, 1);
-            gfx.drawFloat(error, 3, 100, 70, 1);
-            gfx.drawFloat(fuerzaOutput, 3, 100, 95, 1);
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
+            gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
+            gfx.drawFloat(fuerzaOutput, 0, 100, 95, 1);
             last_input_time = current_time;
         }
         stepperY.run();
@@ -757,9 +758,9 @@ result calibrarPID()
             fuerzaPID.Compute();
             stepperY.move(fuerzaOutput);
             double error = fuerzaSetpoint - fuerzaInput;
-            gfx.drawFloat(fuerzaInput, 3, 100, 50, 1);
-            gfx.drawFloat(error, 3, 100, 70, 1);
-            gfx.drawFloat(fuerzaOutput, 3, 100, 95, 1);
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
+            gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
+            gfx.drawFloat(fuerzaOutput, 0, 100, 95, 1);
             last_input_time = current_time;
         }
         stepperY.run();
@@ -817,6 +818,7 @@ void initPreferences()
 {
     prefs.begin("scratch");
     bool init = prefs.isKey("init");
+    init = false;
     if (init == false)
     {
         prefs.putDouble("Kp", Kp);
