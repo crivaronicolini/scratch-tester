@@ -103,7 +103,7 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // 1000g
 float CALIBRATION_FACTOR = -101.805;
 long reading = -1;
-int numSamples = 1;
+int numSamples = 3;
 bool calibrarCelda = false;
 
 // Setup TFT colors.  Probably stop using these and use the colors defined by ArduinoMenu
@@ -122,7 +122,7 @@ int largo = 5;         // mm
 
 // params PID
 double fuerzaSetpoint, fuerzaInput, fuerzaOutput;
-double Kp = 0.2, Ki = 0.5, Kd = 0;
+double Kp = 0.02, Ki = 0, Kd = 0;
 int TOL = 20;
 float MULT = 0.2;
 
@@ -133,9 +133,15 @@ int pasosPorMm = 1600;
 
 // params motores
 // int maxSpeedX = 25000;
-int maxSpeedX = 5000;
-int accelerationX = 10000;
-int MICROSTEP = 16;
+int MICROSTEP = 32;
+// int maxSpeedX = 10000;
+float mm2step(float mm) { return mm * MICROSTEP * 100; }
+float step2mm(float step) { return step / (MICROSTEP * 100); }
+float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
+float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
+
+int maxSpeedX = mmxm2stepxs(100);
+int accelerationX = maxSpeedX * 2;
 
 // params tiempo
 int INPUT_READ_INTERVAL = 100;
@@ -147,6 +153,7 @@ unsigned long lastStopTime = 0;
 int joySW_status = 1;
 bool activateEmergencyStop = false;
 int buffer = 200;
+int test = 44;
 
 PID fuerzaPID(&fuerzaInput, &fuerzaOutput, &fuerzaSetpoint, Kp, Ki, Kd, DIRECT);
 
@@ -168,6 +175,7 @@ void updatePrefs(float value, const char* key);
 void updatePrefs(int value, const char* key);
 void updatePrefs(double value, const char* key);
 void testPrefs();
+result resetearConfig();
 result medir();
 result medirProgreso();
 result definirOrigen();
@@ -183,11 +191,6 @@ void emergencyStop();
 void IRAM_ATTR emergencyStopActivate();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
-float mm2step(float mm) { return mm * MICROSTEP * 100; }
-float step2mm(float step) { return step / (MICROSTEP * 100); }
-float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
-float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
-
 #define DEBUG 1
 
 #if DEBUG == 1
@@ -199,6 +202,90 @@ float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 #define debugln(x)
 #define debugf(x)
 #endif
+void showPath(navRoot &root)
+{
+    Serial.print("nav level:");
+    Serial.print(root.level);
+    Serial.print(" path:[");
+    for (int n = 0; n <= root.level; n++)
+    {
+        Serial.print(n ? "," : "");
+        Serial.print(root.path[n].sel);
+    }
+    Serial.println("]");
+}
+template <typename T>
+class leadsField : public menuField<T>
+{
+public:
+    using menuField<T>::menuField;
+    Used printTo(navRoot &root, bool sel, menuOut &out, idx_t idx, idx_t len, idx_t panelNr = 0) override
+    {
+        menuField<T>::reflex = menuField<T>::target();
+        prompt::printTo(root, sel, out, idx, len);
+        bool ed = this == root.navFocus;
+        out.print((root.navFocus == this && sel) ? (menuField<T>::tunning ? '>' : ':') : ' ');
+        out.setColor(valColor, sel, menuField<T>::enabled, ed);
+        // char buffer[] = "      ";
+        // sprintf(buffer, "%03d", menuField<T>::reflex);
+        out.print(menuField<T>::reflex);
+        out.setColor(unitColor, sel, menuField<T>::enabled, ed);
+        print_P(out, menuField<T>::units(), len);
+
+        Serial.println(menuField<T>::reflex);
+        return len;
+    }
+};
+
+result showEvent(const char *aver, eventMask e, navNode &nav, prompt &item)
+{
+    
+    Serial.println();
+    Serial.println(aver);
+    Serial.println("========");
+    Serial.print("Event for target: 0x");
+    Serial.println((long)nav.target, HEX);
+    Serial.println((long)&nav.target);
+    showPath(*nav.root);
+    Serial.print(e);
+    switch (e)
+    {
+    case noEvent: // just ignore all stuff
+        Serial.println(" noEvent");
+        break;
+    case activateEvent: // this item is about to be active (system event)
+        Serial.println(" activateEvent");
+        break;
+    case enterEvent: // entering navigation level (this menu is now active)
+        Serial.println(" enterEvent");
+        break;
+    case exitEvent: // leaving navigation level
+        Serial.println(" exitEvent");
+        break;
+    case returnEvent: // TODO:entering previous level (return)
+        Serial.println(" returnEvent");
+        break;
+    case focusEvent: // element just gained focus
+        Serial.println(" focusEvent");
+        break;
+    case blurEvent: // element about to lose focus
+        Serial.println(" blurEvent");
+        break;
+    case selFocusEvent: // TODO:child just gained focus
+        Serial.println(" selFocusEvent");
+        break;
+    case selBlurEvent: // TODO:child about to lose focus
+        Serial.println(" selBlurEvent");
+        break;
+    case updateEvent: // Field value has been updated
+        Serial.println(" updateEvent");
+        break;
+    case anyEvent:
+        Serial.println(" anyEvent");
+        break;
+    }
+    return proceed;
+}
 
 //////////////////////////////////////////////////////////
 // Start ArduinoMenu
@@ -213,11 +300,12 @@ result updateEEPROM()
 #define MAX_DEPTH 3
 
 int ejeACalibrar = 1;
+int toggleDummy = 0;
 
 MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", toggleCalibracionCelda,(eventMask)(enterEvent|exitEvent), wrapStyle,
-     FIELD(reading, "Fuerza sensor:","N",-1,100000,0,0,doNothing, noEvent, noStyle),
-     FIELD(CALIBRATION_FACTOR, "Factor de calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
-     FIELD(numSamples, "Numero de muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
+     FIELD(reading, "F:","N",-1,100000,0,0,doNothing, noEvent, noStyle),
+     FIELD(CALIBRATION_FACTOR, "F calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(numSamples, "N muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing, noEvent, noStyle,
@@ -232,29 +320,38 @@ MENU(subMenuCalibrarMotores, "Calibracion de Motores", doNothing, noEvent, wrapS
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
+TOGGLE(toggleDummy, subMenuToggleCalibrarPID, "Calibrar PID", doNothing, noEvent, noStyle,
+        VALUE("", 1, calibrarPID, enterEvent),
+        VALUE("", 0, doNothing, noEvent));
+
 MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
-     OP("Calibrar PID", calibrarPID, enterEvent),
-     FIELD(fuerzaInput, "Fuerza sensor:","N",-100000,100000,0,0,doNothing, noEvent, noStyle),
-     FIELD(MULT, "Factor:", "", 0, 100, 10, 0.25, doNothing, noEvent, noStyle),
-     FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
-     FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
-     FIELD(Kd, "Derivador: ", "", 0, 50, 1, 0.25, doNothing, noEvent, noStyle),
+     // OP("Calibrar PID", calibrarPID, enterEvent),
+     SUBMENU(subMenuToggleCalibrarPID),
+     FIELD(MULT, "Factor:", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0.01, doNothing, noEvent, noStyle),
+     FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0.01, doNothing, noEvent, noStyle),
+     FIELD(Kd, "Derivador: ", "", 0, 50, 1, 0.001, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuCalibrarCelda),
-     SUBMENU(subMenuCalibrarPID),
      SUBMENU(subMenuCalibrarMotores),
+     OP("Resetear configuracion", resetearConfig, enterEvent),
      EXIT("<- Volver"));
+
+TOGGLE(toggleDummy, subMenuToggleDefinirOrigen,"Definir origen", doNothing, noEvent, noStyle,
+        VALUE(" ON", 1, definirOrigen, enterEvent),
+        VALUE("", 0, doNothing, noEvent));
 
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      //  FIELD(Kd, "Derivador: ", "", 0, 50, 1, 5, showEvent("hola"), anyEvent, noStyle),
      // OP("Test", testPrefs, enterEvent),
+     SUBMENU(subMenuCalibrarPID),
      FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
-     OP("Definir origen", definirOrigen, enterEvent),
+     SUBMENU(subMenuToggleDefinirOrigen),
      OP("Medir!", medir, enterEvent),
      OP("Medir con progreso", medirProgreso, enterEvent),
      OP("Homing", homing, enterEvent),
@@ -351,6 +448,7 @@ void loop()
 result definirOrigen()
 {
     // samplea 10 veces y toma el promedio para ver el cero del joystick
+    nav.poll(); // para que aparezca el ON en el menu
     int suma = 0;
     int cantidad = 50;
     for (int i = 0; i < cantidad; i++)
@@ -387,7 +485,7 @@ result definirOrigen()
             int joyY_value = analogRead(joyY);
             // Map the raw analog value to speed range from -maxSpeedX to maxSpeedX
             int desired_speedX = map(joyX_value, 0, 4095, -maxSpeedX, maxSpeedX);
-            int desired_speedY = map(joyY_value, 0, 4095, -maxSpeedX, maxSpeedX);
+            int desired_speedY = - map(joyY_value, 0, 4095, -maxSpeedX, maxSpeedX);
             // debugln(desired_speedX);
 
             // Based on the input, set targets and max speed
@@ -588,53 +686,47 @@ result calibrarMotores()
 
 result calibrarPID()
 {
-    // gfx.fillScreen(TFT_BLACK);
-    // gfx.setCursor(120, 60);
-    // gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    // gfx.setTextSize(2);
-    // gfx.drawCentreString("Peso", 120, 30, 1);
-    // gfx.setTextPadding(100);
-    //
-    // gfx.drawRect(0, 0, 240, 135, TFT_WHITE);
-    // scale.tare(10);
+    gfx.fillScreen(TFT_BLACK);
+    gfx.setCursor(120, 60);
+    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+    gfx.setTextPadding(100);
+
     updatePrefs(Kp,"Kp");
     updatePrefs(Kd,"Kd");
     updatePrefs(Ki,"Ki");
     updatePrefs(MULT,"MULT");
     fuerzaSetpoint = fuerzaFinal * 1000;
 
+    gfx.drawCentreString("Acercando", 100, 30, 1);
+    double Kpf=1, Kif=0, Kdf=0;
+    bool fast = true;
+
     fuerzaPID.SetMode(AUTOMATIC);
-    fuerzaPID.SetOutputLimits(-5000, 5000);
-    fuerzaPID.SetTunings(Kp, Ki, Kd);
-    int n = 0;
-    stepperY.setSpeed(MICROSTEP * 250);
+    fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
+    fuerzaPID.SetTunings(Kpf, Kif, Kdf);
+    fuerzaPID.SetSampleTime(150);
     stepperY.setAcceleration(accelerationX * 10);
     while (digitalRead(joySW))
-    // while (1)
     {
         if (emergencyStopCheck())
         {
             break;
         }
-        // unsigned long current_time = millis();
-        // if (current_time - last_input_time > 100)
-        // {
-        //     fuerzaInput = static_cast<double>(scale.get_units(numSamples)); // newton
-        //     fuerzaPID.Compute();
-        //     float speed = fuerzaOutput * MULT;
-        //     stepperY.move(speed);
-        //     last_input_time = current_time;
-        //     gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
-        //     double error = fuerzaSetpoint - fuerzaInput;
-        //     debugf("error= %f\toutput= %f\tspeed= %f\n", error, fuerzaOutput, speed);
-        // }
-        //
-        // stepperY.run();
-        fuerzaInput = scale.get_units(numSamples); // newton
-        // gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
-        fuerzaPID.Compute();
-        stepperY.setSpeed(fuerzaOutput);
-        stepperY.runSpeed();
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 150)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            if (fuerzaInput >200){ fast = false;break;}
+            fuerzaPID.Compute();
+            stepperY.move(fuerzaOutput);
+            double error = fuerzaSetpoint - fuerzaInput;
+            gfx.drawFloat(fuerzaInput, 3, 100, 50, 1);
+            gfx.drawFloat(error, 3, 100, 70, 1);
+            gfx.drawFloat(fuerzaOutput, 3, 100, 95, 1);
+            last_input_time = current_time;
+        }
+        stepperY.run();
+        // stepperY.runSpeedToPosition();
 
         // debugf("input= %d\toutput= %d\n", fuerzaInput, fuerzaOutput);
         // if (error < TOL)
@@ -648,8 +740,32 @@ result calibrarPID()
         //     n = 0;
         // }
     }
+
+    gfx.fillScreen(TFT_BLACK);
+    gfx.drawCentreString("Estable", 100, 30, 1);
+    fuerzaPID.SetTunings(Kp, Ki, Kd);
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 150)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            fuerzaPID.Compute();
+            stepperY.move(fuerzaOutput);
+            double error = fuerzaSetpoint - fuerzaInput;
+            gfx.drawFloat(fuerzaInput, 3, 100, 50, 1);
+            gfx.drawFloat(error, 3, 100, 70, 1);
+            gfx.drawFloat(fuerzaOutput, 3, 100, 95, 1);
+            last_input_time = current_time;
+        }
+        stepperY.run();
+    }
+    nav.refresh();
     mainMenu.dirty = true;
-    // debugf("peso %f\n", reading);
     return proceed;
 }
 
@@ -659,6 +775,10 @@ long leerCelda(){
 
 result toggleCalibracionCelda()
 {
+    if (calibrarCelda==true){
+        updatePrefs(CALIBRATION_FACTOR,"CALIBRATIONFACTOR");
+        updatePrefs(numSamples,"numSamples");
+    }
     calibrarCelda = ~calibrarCelda;
     return proceed;
 }    
@@ -684,8 +804,8 @@ void initMotors()
     driverY.pwm_autoscale(1);
     driverY.microsteps(MICROSTEP);
 
-    stepperX.move(50 * MICROSTEP);
-    stepperY.move(-50 * MICROSTEP);
+    stepperX.move(mm2step(1));
+    stepperY.move(mm2step(-1));
     while (stepperX.distanceToGo() != 0 && stepperY.distanceToGo() != 0)
     {
         stepperX.run();
@@ -699,14 +819,14 @@ void initPreferences()
     bool init = prefs.isKey("init");
     if (init == false)
     {
-        prefs.putFloat("Kp", Kp);
-        prefs.putFloat("Ki", Ki);
-        prefs.putFloat("Kd", Kd);
-        prefs.putFloat("TOL", TOL);
+        prefs.putDouble("Kp", Kp);
+        prefs.putDouble("Ki", Ki);
+        prefs.putDouble("Kd", Kd);
+        prefs.putInt("TOL", TOL);
         prefs.putFloat("MULT", MULT);
-        prefs.putFloat("CALIBRATIONFACTOR", CALIBRATION_FACTOR);
+        prefs.putFloat("CALI", CALIBRATION_FACTOR);
         prefs.putInt("fuerzaInicial", fuerzaInicial);
-        prefs.putInt("ffuerzaFinal", fuerzaFinal);
+        prefs.putInt("fuerzaFinal", fuerzaFinal);
         prefs.putInt("velocidad", velocidad);
         prefs.putInt("largo", largo);
         prefs.putInt("cantVeces", cantVeces);
@@ -720,12 +840,12 @@ void initPreferences()
     }
     else
     {
-        Kp = prefs.getFloat("Kp");
-        Ki = prefs.getFloat("Ki");
-        Kd = prefs.getFloat("Kd");
-        TOL = prefs.getFloat("TOL");
+        Kp = prefs.getDouble("Kp");
+        Ki = prefs.getDouble("Ki");
+        Kd = prefs.getDouble("Kd");
+        TOL = prefs.getInt("TOL");
         MULT = prefs.getFloat("MULT");
-        CALIBRATION_FACTOR = prefs.getFloat("CALIBRATIONFACTOR");
+        CALIBRATION_FACTOR = prefs.getFloat("CALI");
         fuerzaInicial = prefs.getInt("fuerzaInicial");
         fuerzaFinal = prefs.getInt("fuerzaFinal");
         velocidad = prefs.getInt("velocidad");
@@ -749,7 +869,7 @@ void updatePrefs(int value, const char* key)
 void updatePrefs(double value, const char* key)
 {
     debugf("guardando %s:%d", key, value);
-    prefs.putInt(key,value);
+    prefs.putDouble(key,value);
 }
 
 void updatePrefs(float value, const char* key)
@@ -824,3 +944,10 @@ void emergencyStop()
     }
     activateEmergencyStop = false;
 }
+
+result resetearConfig()
+{
+    prefs.remove("init");
+    return proceed;
+}
+
