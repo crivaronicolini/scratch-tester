@@ -19,6 +19,7 @@ Preferences prefs;
 
 #include <TMCStepper.h>
 #include <AccelStepper.h>
+#include <FastAccelStepper.h>
 
 #include <PID_v1.h>
 
@@ -161,8 +162,8 @@ TMC2130Stepper driverX = TMC2130Stepper(CS_PINX, R_SENSE, SW_MOSI, SW_MISO, SW_S
 TMC2130Stepper driverY = TMC2130Stepper(CS_PINY, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
 
 AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
-AccelStepper stepperY(AccelStepper::DRIVER, stepY, dirY);
-
+FastAccelStepperEngine engine = FastAccelStepperEngine();
+FastAccelStepper *stepperY = NULL;
 // Declare the clickencoder
 // Disable doubleclicks in setup makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
 ClickEncoder clickEncoder = ClickEncoder(encA, encB, encBtn, encSteps);
@@ -469,7 +470,7 @@ result definirOrigen()
     debugf("buffer maxY: %f\n", bufferMaxY);
     debugf("buffer minY: %f\n", bufferMinY);
     stepperX.setAcceleration(4 * maxSpeedX);
-    stepperY.setAcceleration(4 * maxSpeedX);
+    stepperY->setAcceleration(4 * maxSpeedX);
 
     while (digitalRead(joySW))
     {
@@ -490,7 +491,7 @@ result definirOrigen()
 
             // Based on the input, set targets and max speed
             stepperX.setMaxSpeed(abs(desired_speedX));
-            stepperY.setMaxSpeed(abs(desired_speedY));
+            stepperY->setSpeedInHz(abs(desired_speedY));
             debugf("X %d; Y %d\n", joyX_value, joyY_value);
 
             if (not(joyX_value > bufferMinX && bufferMaxX > joyX_value))
@@ -511,22 +512,27 @@ result definirOrigen()
                 if (desired_speedY < 0)
                 {
                     debugln("Y negativo");
-                    stepperY.moveTo(-1000000000);
+                    stepperY->runBackward();
                 }
                 else if (desired_speedY > 0)
                 {
                     debugln("Y positivo");
-                    stepperY.moveTo(1000000000);
+                    stepperY->runForward();
                 }
                 debugf("\n");
+            }
+            else
+            {
+                stepperX.stop();
+                stepperY->stopMove();
             }
             last_input_time = current_time;
         }
         stepperX.run();
-        stepperY.run();
+        // stepperY.run();
     }
     stepperX.setCurrentPosition(0);
-    stepperY.setCurrentPosition(0);
+    // stepperY.setCurrentPosition(0);
     mainMenu.dirty = true;
     return proceed;
 }
@@ -566,8 +572,8 @@ result medirProgreso()
         }
         fuerzaInput = scale.get_units(numSamples); // newton
         fuerzaPID.Compute();
-        stepperY.setSpeed(fuerzaOutput);
-        stepperY.runSpeed();
+        // stepperY.setSpeed(fuerzaOutput);
+        // stepperY.runSpeed();
         gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
         double error = fuerzaSetpoint - fuerzaInput;
         if (error < TOL)
@@ -590,8 +596,8 @@ result medirProgreso()
         }
         fuerzaInput = scale.get_units(numSamples); // newton
         fuerzaPID.Compute();
-        stepperY.setSpeed(fuerzaOutput);
-        stepperY.runSpeed();
+        // stepperY.setSpeed(fuerzaOutput);
+        // stepperY.runSpeed();
         gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
         stepperX.runSpeed();
         // stepperX.runSpeedToPosition();
@@ -640,7 +646,7 @@ result calibrarMotores()
     }
     else
     {
-        stp = stepperY;
+        // stp = stepperY;
     }
     stp.setSpeed(mmxm2stepxs(velocidad));
     debugf("cant veces %d, pasosxmm %d, cantmm %d mm %d step\n", cantVeces, pasosPorMm, cantMm, mm2step(cantMm));
@@ -687,84 +693,160 @@ result calibrarMotores()
 result calibrarPID()
 {
     gfx.fillScreen(TFT_BLACK);
-    gfx.setCursor(120, 60);
     gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    gfx.setTextPadding(100);
+    gfx.setTextPadding(80);
 
     updatePrefs(Kp,"Kp");
     updatePrefs(Kd,"Kd");
     updatePrefs(Ki,"Ki");
-    updatePrefs(MULT,"MULT");
     fuerzaSetpoint = fuerzaFinal * 1000;
 
-    gfx.drawCentreString("Acercando", 100, 30, 1);
-    double Kpf=1.5, Kif=0, Kdf=0;
+    gfx.drawString("Acercando", 1, 2, 1);
+    gfx.drawString("I", 125, 2, 1);
+    // gfx.drawString("Input", 160, 50, 1);
+
     bool fast = true;
 
     fuerzaPID.SetMode(AUTOMATIC);
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
-    fuerzaPID.SetTunings(Kpf, Kif, Kdf);
-    fuerzaPID.SetSampleTime(150);
-    stepperX.setSpeed(maxSpeedX*8);
-    stepperY.setAcceleration(accelerationX * 10);
+    fuerzaPID.SetSampleTime(50);
+    stepperY->setSpeedInHz(maxSpeedX*fuerzaFinal/20);
+    stepperY->setAcceleration(accelerationX * 10);
+
+    float a = mm2step(0.1);
     while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
         {
             break;
         }
-        unsigned long current_time = millis();
-        if (current_time - last_input_time > 350)
-        {
-            fuerzaInput = scale.get_units(numSamples); // newton
-            if (fuerzaInput >200){ fast = false;break;}
-            fuerzaPID.Compute();
-            stepperY.move(fuerzaOutput);
-            double error = fuerzaSetpoint - fuerzaInput;
-            gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
-            gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
-            gfx.drawFloat(fuerzaOutput, 0, 100, 95, 1);
-            last_input_time = current_time;
-        }
-        stepperY.run();
-        // stepperY.runSpeedToPosition();
-
-        // debugf("input= %d\toutput= %d\n", fuerzaInput, fuerzaOutput);
-        // if (error < TOL)
-        // {
-        //     n++;
-        //     if (n = 50)
-        //         break;
-        // }
-        // else
-        // {
-        //     n = 0;
-        // }
+        stepperY->runForward();
+        fuerzaInput = scale.get_units(numSamples); // newton
+        if (fuerzaInput>50){ stepperY->forceStop();fast = false;break;}
+        gfx.drawFloat(fuerzaInput/1000.0, 3, 140, 2, 1);
     }
 
     gfx.fillScreen(TFT_BLACK);
-    gfx.drawCentreString("Estable", 100, 30, 1);
+    gfx.setTextColor(TFT_BLUE, TFT_BLACK);
+    gfx.drawString("E", 1, 2, 1);
+    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
     fuerzaPID.SetTunings(Kp, Ki, Kd);
+
+    gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
+    gfx.drawString("I", 25, 2, 1);
+    // gfx.drawString("Error", 120, 70, 1);
+    gfx.setTextColor(TFT_RED, TFT_BLACK);
+    gfx.drawString("O", 140, 2, 1);
+    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+    // gfx.drawString("V", 120, 110, 1);
+
+    // gfx.drawLine(2, 10, 2, 133, TFT_WHITE);
+    // gfx.drawLine(2, 133, 240, 133, TFT_WHITE);
+    float f = map(fuerzaSetpoint, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
+    float O = map(0, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
+    float dy = f-O;
+    gfx.drawLine(0, f, 240, f, TFT_BLUE);
+    gfx.drawLine(0, O, 240, O, TFT_WHITE);
+    gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
+    gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
+    gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
+    // gfx.drawString("f",10,f,1);
+    // gfx.drawString("O",10,O,1);
+    // gfx.drawString("O+2*dy",100,O+2*dy,1);
+    // gfx.drawString("O+3*dy",150,O+3*dy,1);
+    // gfx.drawString("O-dy",200,O-dy,1);
+
+    int x = 3;
+
+
+    // // 0.1
+    // stepperY->setSpeedInHz(maxSpeedX*10);
+    // stepperY->applySpeedAcceleration();
+
+    // 0.2
+    stepperY->setAcceleration(accelerationX*10);
+    stepperY->applySpeedAcceleration();
+
+    // // 0.3 le pongo mas velocidad y aceleracion: va mas rapido pero es mas choppy
+    // stepperY->setSpeedInHz(maxSpeedX);
+    // stepperY->setAcceleration(accelerationX*1000);
+    // stepperY->applySpeedAcceleration();
+
     while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
         {
             break;
         }
+
+        // // 0.1 funciona pero hay que ajustar los numeros
+        // unsigned long current_time = millis();
+        // if (current_time - last_input_time > 50)
+        // {
+        //     fuerzaInput = scale.get_units(numSamples); // newton
+        //     fuerzaPID.Compute();
+        //     stepperY->moveByAcceleration(100*fuerzaOutput);
+        //     double error = fuerzaSetpoint - fuerzaInput;
+        //     gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
+        //     gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
+        //     gfx.drawFloat(100*fuerzaOutput, 0, 100, 90, 1);
+        //     gfx.drawFloat(1000*stepperY->getCurrentSpeedInMilliHz(), 0, 100, 110, 1);
+        //     last_input_time = current_time;
+        // }
+        
+        // 0.2 aver set speed y runForward
+        // funciona con kp=0.02, pero converge muy lento
+        // lo estoy probando denuevo, por ahi le puedo subir el kp y meterle I D
         unsigned long current_time = millis();
-        if (current_time - last_input_time > 150)
+        if (current_time - last_input_time > 50)
         {
             fuerzaInput = scale.get_units(numSamples); // newton
             fuerzaPID.Compute();
-            stepperY.move(fuerzaOutput);
+            if (fuerzaOutput>0.2){
+                stepperY->setSpeedInHz(fuerzaOutput);
+                stepperY->runForward();
+            } else if (fuerzaOutput<-0.2){
+                stepperY->setSpeedInHz(-fuerzaOutput);
+                stepperY->runBackward();
+            }
+            else { stepperY->stopMove();}
             double error = fuerzaSetpoint - fuerzaInput;
-            gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
-            gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
-            gfx.drawFloat(fuerzaOutput, 0, 100, 95, 1);
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+            gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
+
+            float i = map(fuerzaInput, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
+            float o = map(fuerzaOutput, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
+            gfx.drawPixel(x, i, TFT_YELLOW);
+            gfx.drawPixel(x, o, TFT_RED);
+            x++;
+            if (x==240) {
+                x=3;
+                gfx.fillRect(0,20,240,135,TFT_BLACK);
+                gfx.drawLine(0, f, 240, f, TFT_BLUE);
+                gfx.drawLine(0, O, 240, O, TFT_WHITE);
+                gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
+                gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
+                gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
+            }
             last_input_time = current_time;
         }
-        stepperY.run();
+
+        // // 0.3 funciona bien pero es medio choppy
+        // unsigned long current_time = millis();
+        // if (current_time - last_input_time > 50)
+        // {
+        //     fuerzaInput = scale.get_units(numSamples); // newton
+        //     fuerzaPID.Compute();
+        //     stepperY->move(fuerzaOutput);
+        //     double error = fuerzaSetpoint - fuerzaInput;
+        //     gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
+        //     gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
+        //     gfx.drawFloat(fuerzaOutput, 0, 100, 95, 1);
+        //     last_input_time = current_time;
+        // }
+
     }
+    stepperY->forceStop();
     nav.refresh();
     mainMenu.dirty = true;
     return proceed;
@@ -795,9 +877,11 @@ void initMotors()
     driverX.pwm_autoscale(1);
     driverX.microsteps(MICROSTEP);
 
-    stepperY.setMaxSpeed(maxSpeedX);
-    stepperY.setAcceleration(accelerationX);
-    stepperY.setPinsInverted(true, false, false);
+    engine.init();
+    stepperY = engine.stepperConnectToPin(stepY);
+    stepperY->setDirectionPin(dirY,false);
+    stepperY->setSpeedInHz(maxSpeedX);
+    stepperY->setAcceleration(accelerationX);
 
     driverY.begin();
     driverY.rms_current(600);
@@ -806,11 +890,10 @@ void initMotors()
     driverY.microsteps(MICROSTEP);
 
     stepperX.move(mm2step(1));
-    stepperY.move(mm2step(-1));
-    while (stepperX.distanceToGo() != 0 && stepperY.distanceToGo() != 0)
+    stepperY->move(mm2step(-1));
+    while (stepperX.distanceToGo() != 0)
     {
         stepperX.run();
-        stepperY.run();
     }
 }
 
@@ -921,12 +1004,13 @@ void emergencyStop()
     int speedX = stepperX.speed();
     stepperX.setAcceleration(accelerationX * 10);
     stepperX.stop();
-    int speedY = stepperY.speed();
-    stepperY.setAcceleration(accelerationX * 10);
-    stepperY.stop();
+    int speedY = stepperY->getSpeedInMilliHz();
+    stepperY->setAcceleration(accelerationX * 10);
+    stepperY->applySpeedAcceleration();
+    stepperY->stopMove();
 
     stepperX.setAcceleration(accelerationX);
-    stepperY.setAcceleration(accelerationX);
+    stepperY->setAcceleration(accelerationX);
     if (speedX < 0)
     {
         stepperX.move(mm2step(5));
@@ -938,11 +1022,11 @@ void emergencyStop()
 
     if (speedY < 0)
     {
-        stepperY.move(mm2step(5));
+        stepperY->move(mm2step(5));
     }
     else if (speedY > 0)
     {
-        stepperY.move(mm2step(-5));
+        stepperY->move(mm2step(-5));
     }
     activateEmergencyStop = false;
 }
