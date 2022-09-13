@@ -133,7 +133,7 @@ int pasosPorMm = 1600;
 
 // params motores
 // int maxSpeedX = 25000;
-int MICROSTEP = 32;
+int MICROSTEP = 256;
 // int maxSpeedX = 10000;
 float mm2step(float mm) { return mm * MICROSTEP * 100; }
 float step2mm(float step) { return step / (MICROSTEP * 100); }
@@ -698,14 +698,14 @@ result calibrarPID()
     fuerzaSetpoint = fuerzaFinal * 1000;
 
     gfx.drawCentreString("Acercando", 100, 30, 1);
-    double Kpf=1, Kif=0, Kdf=0;
+    double Kpf=1.5, Kif=0, Kdf=0;
     bool fast = true;
 
     fuerzaPID.SetMode(AUTOMATIC);
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
     fuerzaPID.SetTunings(Kpf, Kif, Kdf);
     fuerzaPID.SetSampleTime(150);
-    stepperX.setSpeed(maxSpeedX*4);
+    stepperX.setSpeed(maxSpeedX*8);
     stepperY.setAcceleration(accelerationX * 10);
     while (digitalRead(joySW))
     {
@@ -818,7 +818,7 @@ void initPreferences()
 {
     prefs.begin("scratch");
     bool init = prefs.isKey("init");
-    init = false;
+    // init = false;
     if (init == false)
     {
         prefs.putDouble("Kp", Kp);
