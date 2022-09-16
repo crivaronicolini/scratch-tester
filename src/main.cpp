@@ -18,7 +18,6 @@ Preferences prefs;
 #include <menuIO/serialIn.h>
 
 #include <TMCStepper.h>
-#include <AccelStepper.h>
 #include <FastAccelStepper.h>
 
 #include <PID_v1.h>
@@ -124,7 +123,7 @@ int largo = 5;         // mm
 // params PID
 double fuerzaSetpoint, fuerzaInput, fuerzaOutput;
 double Kp = 0.02, Ki = 0, Kd = 0;
-int TOL = 20;
+int TOL = 100;
 float MULT = 0.2;
 
 // params calibracion
@@ -156,13 +155,16 @@ bool activateEmergencyStop = false;
 int buffer = 200;
 int test = 44;
 
+// init graph
+float f, O, dy;
+
 PID fuerzaPID(&fuerzaInput, &fuerzaOutput, &fuerzaSetpoint, Kp, Ki, Kd, DIRECT);
 
 TMC2130Stepper driverX = TMC2130Stepper(CS_PINX, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
 TMC2130Stepper driverY = TMC2130Stepper(CS_PINY, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
 
-AccelStepper stepperX(AccelStepper::DRIVER, stepX, dirX);
 FastAccelStepperEngine engine = FastAccelStepperEngine();
+FastAccelStepper *stepperX = NULL;
 FastAccelStepper *stepperY = NULL;
 // Declare the clickencoder
 // Disable doubleclicks in setup makes the response faster.  See: https://github.com/soligen2010/encoder/issues/6
@@ -172,17 +174,20 @@ ClickEncoderStream encStream(clickEncoder, 1);
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
 TFT_eSPI gfx = TFT_eSPI();
 TFT_eFEX fex = TFT_eFEX(&gfx);
+void drawGraph(int stage);
 void updatePrefs(float value, const char* key);
 void updatePrefs(int value, const char* key);
 void updatePrefs(double value, const char* key);
 void testPrefs();
 result resetearConfig();
 result medir();
+result mapear();
 result medirProgreso();
 result definirOrigen();
 result homing();
 result calibrarMotores();
 result calibrarPID();
+result stepPID();
 long leerCelda();
 result toggleCalibracionCelda();
 void initPreferences();
@@ -192,17 +197,30 @@ void emergencyStop();
 void IRAM_ATTR emergencyStopActivate();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
-#define DEBUG 1
+#define DEBUG 0
+#define MONITOR 1
+
+#if MONITOR == 1
+#define monitor(x) Serial.print(x)
+#define monitorln(x) Serial.println(x)
+#define monitorf(...) Serial.printf(__VA_ARGS__)
+#define monitorw(...) Serial.write(__VA_ARGS__)
+#else
+#define monitor(x) do { } while(0)
+#define monitorln(x) do { } while(0)
+#define monitorf(...) do { } while(0)
+#endif
 
 #if DEBUG == 1
 #define debug(x) Serial.print(x)
 #define debugln(x) Serial.println(x)
 #define debugf(...) Serial.printf(__VA_ARGS__)
 #else
-#define debug(x)
-#define debugln(x)
-#define debugf(x)
+#define debug(x) do { } while(0)
+#define debugln(x) do { } while(0)
+#define debugf(...) do { } while(0)
 #endif
+
 void showPath(navRoot &root)
 {
     Serial.print("nav level:");
@@ -321,17 +339,30 @@ MENU(subMenuCalibrarMotores, "Calibracion de Motores", doNothing, noEvent, wrapS
      FIELD(pasosPorMm, "Pasos por mm:", "", 1500, 1700, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
+TOGGLE(toggleDummy, subMenuToggleStepPID, "step PID", doNothing, noEvent, noStyle,
+        VALUE("", 1, stepPID, enterEvent),
+        VALUE("", 0, doNothing, noEvent));
+
 TOGGLE(toggleDummy, subMenuToggleCalibrarPID, "Calibrar PID", doNothing, noEvent, noStyle,
         VALUE("", 1, calibrarPID, enterEvent),
         VALUE("", 0, doNothing, noEvent));
 
+TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
+        VALUE("", 1, medir, enterEvent),
+        VALUE("", 0, doNothing, noEvent));
+
+TOGGLE(toggleDummy, subMenuToggleMapear, "Mapear", doNothing, noEvent, noStyle,
+        VALUE("", 1, mapear, enterEvent),
+        VALUE("", 0, doNothing, noEvent));
+
 MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
-     // OP("Calibrar PID", calibrarPID, enterEvent),
      SUBMENU(subMenuToggleCalibrarPID),
-     FIELD(MULT, "Factor:", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
-     FIELD(Kp, "Proporcional: ", "", 0, 50, 1, 0.01, doNothing, noEvent, noStyle),
-     FIELD(Ki, "Integrador: ", "", 0, 50, 1, 0.01, doNothing, noEvent, noStyle),
-     FIELD(Kd, "Derivador: ", "", 0, 50, 1, 0.001, doNothing, noEvent, noStyle),
+     SUBMENU(subMenuToggleStepPID),
+     SUBMENU(subMenuToggleMedir),
+     SUBMENU(subMenuToggleMapear),
+     altFIELD(decPlaces<3>::menuField, Kp, "Proporcional: ", "", 0, 1, 0.01, 0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Ki, "Integrador: ", "", 0, 1, 0.01, 0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Kd, "Derivador: ", "", 0, 1, 0.01, 0.001, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
@@ -353,7 +384,7 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
      SUBMENU(subMenuToggleDefinirOrigen),
-     OP("Medir!", medir, enterEvent),
+     SUBMENU(subMenuToggleMedir),
      OP("Medir con progreso", medirProgreso, enterEvent),
      OP("Homing", homing, enterEvent),
      SUBMENU(subMenuCalibrar));
@@ -366,7 +397,11 @@ idx_t eSpiTops[MAX_DEPTH] = {0};
 TFT_eSPIOut eSpiOut(gfx, colors, eSpiTops, pList, fontW, fontH + 1);
 idx_t serialTops[MAX_DEPTH] = {0};
 serialOut outSerial(Serial, serialTops);
-menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
+#if DEBUG == 1
+    menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
+#else
+    menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
+#endif
 outputsList out(outputs, sizeof(outputs) / sizeof(menuOut *)); // outputs list
 serialIn serial(Serial);
 MENU_INPUTS(in, &encStream, &serial); // &encButton,
@@ -443,6 +478,7 @@ void loop()
         }
         lastMenuFrame = millis();
         nav.poll();
+        // monitorf("$%f,%d",1.0);
     }
 }
 
@@ -469,7 +505,7 @@ result definirOrigen()
     debugf("buffer minX: %f\n", bufferMinX);
     debugf("buffer maxY: %f\n", bufferMaxY);
     debugf("buffer minY: %f\n", bufferMinY);
-    stepperX.setAcceleration(4 * maxSpeedX);
+    stepperX->setAcceleration(4 * maxSpeedX);
     stepperY->setAcceleration(4 * maxSpeedX);
 
     while (digitalRead(joySW))
@@ -490,7 +526,7 @@ result definirOrigen()
             // debugln(desired_speedX);
 
             // Based on the input, set targets and max speed
-            stepperX.setMaxSpeed(abs(desired_speedX));
+            stepperX->setSpeedInHz(abs(desired_speedX));
             stepperY->setSpeedInHz(abs(desired_speedY));
             debugf("X %d; Y %d\n", joyX_value, joyY_value);
 
@@ -498,66 +534,387 @@ result definirOrigen()
             {
                 if (desired_speedX < 0)
                 {
-                    debugln("X negativo");
-                    stepperX.moveTo(-1000000000);
+                    // debugln("X negativo");
+                    stepperX->runBackward();
                 }
                 else if (desired_speedX > 0)
                 {
-                    debugln("X positivo");
-                    stepperX.moveTo(1000000000);
+                    // debugln("X positivo");
+                    stepperX->runForward();
                 }
             }
             if (not(joyY_value > bufferMinY && bufferMaxY > joyY_value))
             {
                 if (desired_speedY < 0)
                 {
-                    debugln("Y negativo");
+                    // debugln("Y negativo");
                     stepperY->runBackward();
                 }
                 else if (desired_speedY > 0)
                 {
-                    debugln("Y positivo");
+                    // debugln("Y positivo");
                     stepperY->runForward();
                 }
-                debugf("\n");
+                // debugf("\n");
             }
-            else
+            if (joyY_value > bufferMinY && bufferMaxY > joyY_value)
             {
-                stepperX.stop();
                 stepperY->stopMove();
+            }
+            if (joyX_value > bufferMinX && bufferMaxX > joyX_value)
+            {
+                stepperX->stopMove();
             }
             last_input_time = current_time;
         }
-        stepperX.run();
-        // stepperY.run();
     }
-    stepperX.setCurrentPosition(0);
-    // stepperY.setCurrentPosition(0);
     mainMenu.dirty = true;
     return proceed;
 }
 
+result mapear()
+{
+    updatePrefs(Kp,"Kp");
+    updatePrefs(Kd,"Kd");
+    updatePrefs(Ki,"Ki");
+    updatePrefs(velocidad,"velocidad");
+    updatePrefs(fuerzaInicial,"fuerzaInicial");
+    updatePrefs(fuerzaFinal,"fuerzaFinal");
+    updatePrefs(largo,"largo");
+
+    fuerzaSetpoint = 100+fuerzaInicial * 1000;
+    int fuerzaFinalM = fuerzaFinal * 1000;
+    int fuerzaInicialM = fuerzaInicial * 1000;
+
+    fuerzaPID.SetMode(AUTOMATIC);
+    fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
+    fuerzaPID.SetSampleTime(50);
+    fuerzaPID.SetTunings(Kp*(velocidad/2), Ki, Kd);
+
+    // ACERCAMIENTO
+    stepperY->setSpeedInHz(maxSpeedX*fuerzaInicial/20);
+    stepperY->setAcceleration(accelerationX * 10);
+
+    drawGraph(1);
+    drawGraph(6);
+    int x = 3;
+
+    stepperY->runForward();
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        fuerzaInput = scale.get_units(numSamples); // newton
+        if (fuerzaInput>50){ stepperY->forceStop();break;}
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+            float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+            gfx.drawPixel(x, i, TFT_YELLOW);
+            x++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+    }
+
+
+    x = 3;
+    int n = 0;
+    int m = 0;
+
+    // ESTABILIZACION
+    stepperY->setCurrentPosition(mm2step(0.5));
+    stepperY->forceStop();
+    delay(100);
+    float ceroCelda = scale.get_units(10);
+
+    while (m<100)
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            double altura = fuerzaInput - ceroCelda;
+            gfx.drawFloat(altura/1000.0, 3, 50, 1, 1);
+
+            float a = map(altura, -1000, 1000, 130, 18);
+            gfx.drawPixel(x, a, TFT_GREEN);
+            monitorf("%d\t%d\t%f\n", current_time,stepperX->getCurrentPosition(), altura/1000.0);
+            x++;
+            m++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+
+    }
+
+
+    x = 3;
+    n = 0;
+
+    // MEDICION
+    drawGraph(3);
+    drawGraph(4);
+    drawGraph(6);
+
+    float largoSteps = mm2step(largo);
+    stepperX->setCurrentPosition(0);
+    stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
+    float ratio = 0;
+    stepperX->move(largoSteps);
+
+    while (digitalRead(joySW) && stepperX->isRunning())
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        fuerzaInput = scale.get_units(numSamples); // newton
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            double altura = fuerzaInput - ceroCelda;
+            gfx.drawFloat(altura/1000.0, 3, 50, 1, 1);
+
+            float a = map(altura, -1000, 1000, 130, 18);
+            gfx.drawPixel(x, a, TFT_GREEN);
+            monitorf("%d\t%d\t%f\n", current_time,stepperX->getCurrentPosition(), altura/1000.0);
+            x++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+
+    }
+    if (not (stepperX->isRunning())) { toggleDummy = 0; }
+    stepperX->forceStop();
+    stepperY->forceStop();
+
+    stepperX->setSpeedInHz(maxSpeedX);
+    stepperY->setSpeedInHz(maxSpeedX);
+
+    stepperY->moveTo(0);
+    delay(20);
+    stepperX->moveTo(0);
+    nav.refresh();
+    mainMenu.dirty = true;
+    return proceed;
+}
 result medir()
 {
-    float largoSteps = mm2step(largo);
-    stepperX.setSpeed(mmxm2stepxs(velocidad));
-    stepperX.move(largoSteps);
-    stepperX.runToPosition();
-    // volver a la posicion anterior
-    stepperX.setSpeed(maxSpeedX);
-    stepperX.move(-largoSteps);
-    stepperX.runToPosition();
+    updatePrefs(Kp,"Kp");
+    updatePrefs(Kd,"Kd");
+    updatePrefs(Ki,"Ki");
+    updatePrefs(velocidad,"velocidad");
+    updatePrefs(fuerzaInicial,"fuerzaInicial");
+    updatePrefs(fuerzaFinal,"fuerzaFinal");
+    updatePrefs(largo,"largo");
 
-    mainMenu.dirty = true; // Force the main menu to redraw itself
+    fuerzaSetpoint = 100+fuerzaInicial * 1000;
+    int fuerzaFinalM = fuerzaFinal * 1000;
+    int fuerzaInicialM = fuerzaInicial * 1000;
+
+    fuerzaPID.SetMode(AUTOMATIC);
+    fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
+    fuerzaPID.SetSampleTime(50);
+    fuerzaPID.SetTunings(Kp*(velocidad/2), Ki, Kd);
+
+    // ACERCAMIENTO
+    stepperY->setSpeedInHz(maxSpeedX*fuerzaInicial/20);
+    stepperY->setAcceleration(accelerationX * 10);
+
+    drawGraph(1);
+    drawGraph(6);
+    int x = 3;
+
+    stepperY->runForward();
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        fuerzaInput = scale.get_units(numSamples); // newton
+        if (fuerzaInput>50){ stepperY->forceStop();break;}
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+            float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+            monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
+            gfx.drawPixel(x, i, TFT_YELLOW);
+            x++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+    }
+
+
+    x = 3;
+    int n = 0;
+
+    // ESTABILIZACION
+    stepperY->setCurrentPosition(mm2step(0.5));
+
+    drawGraph(2);
+    drawGraph(4);
+    drawGraph(6);
+
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+
+        // 0.2 aver set speed y runForward
+        // funciona con kp=0.02, pero converge muy lento
+        // lo estoy probando denuevo, por ahi le puedo subir el kp y meterle I D
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            fuerzaPID.Compute();
+            if (fuerzaOutput>0.2){
+                stepperY->setSpeedInHz(fuerzaOutput);
+                stepperY->runForward();
+            } else if (fuerzaOutput<-0.2){
+                stepperY->setSpeedInHz(-fuerzaOutput);
+                stepperY->runBackward();
+            }
+            else { stepperY->stopMove();}
+            monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
+            double error = fuerzaSetpoint - fuerzaInput;
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+            gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
+
+            float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+            float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinalM, 130, 18);
+            float o = map(fuerzaOutput, -100, 100, 130, 18);
+            gfx.drawPixel(x, i, TFT_YELLOW);
+            gfx.drawPixel(x, s, TFT_GREEN);
+            gfx.drawPixel(x, o, TFT_RED);
+            x++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+
+
+            // para ver que estamos en la fuerza inicial
+            if (-TOL < error < TOL)
+            {
+                n++;
+                if (n = 1000)
+                    break;
+            }
+            else
+            {
+                n = 0;
+            }
+        }
+    }
+
+    x = 3;
+    n = 0;
+
+    // MEDICION
+    drawGraph(3);
+    drawGraph(4);
+    drawGraph(6);
+
+    float deltaF = fuerzaFinalM - fuerzaInicialM;
+    float largoSteps = mm2step(largo);
+    float oldX = stepperX->getCurrentPosition();
+    stepperX->setCurrentPosition(0);
+    stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
+    float ratio = 0;
+    stepperX->move(largoSteps);
+
+    while (digitalRead(joySW) && stepperX->isRunning())
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        ratio = stepperX->getCurrentPosition() / largoSteps;
+        fuerzaSetpoint = fuerzaInicialM + (deltaF * ratio);
+
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            fuerzaPID.Compute();
+            if (fuerzaOutput>0.2){
+                stepperY->setSpeedInHz(fuerzaOutput);
+                stepperY->runForward();
+            } else if (fuerzaOutput<-0.2){
+                stepperY->setSpeedInHz(-fuerzaOutput);
+                stepperY->runBackward();
+            }
+            else { stepperY->stopMove();}
+            monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
+            double error = fuerzaSetpoint - fuerzaInput;
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+            gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
+            // gfx.drawFloat(fuerzaSetpoint, 3, 170, 30, 1);
+
+            float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+            float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinalM, 130, 18);
+            float o = map(fuerzaOutput, -100, 100, 130, 18);
+            float e = map(error, -1000, 1000, 130, 18);
+            gfx.drawPixel(x, s, TFT_GREEN);
+            gfx.drawPixel(x, i, TFT_YELLOW);
+            gfx.drawPixel(x, o, TFT_RED);
+            gfx.drawPixel(x, e, TFT_BLUE);
+            x++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+
+    }
+    if (not (stepperX->isRunning())) { toggleDummy = 0; }
+    stepperX->forceStop();
+    stepperY->forceStop();
+
+    stepperX->setSpeedInHz(maxSpeedX);
+    stepperY->setSpeedInHz(maxSpeedX);
+
+    stepperY->moveTo(0);
+    delay(20);
+    stepperX->moveTo(0);
+    nav.refresh();
+    mainMenu.dirty = true;
     return proceed;
 }
 
 result medirProgreso()
 {
     float largoSteps = mm2step(largo);
-    stepperX.setSpeed(mmxm2stepxs(velocidad));
-    // stepperX.setSpeed(10000000);
-    stepperX.move(largoSteps);
+    // stepperX.setSpeed(mmxm2stepxs(velocidad));
+    // stepperX.move(largoSteps);
     last_input_time = 0;
     gfx.fillScreen(Black);
     fuerzaPID.SetMode(AUTOMATIC);
@@ -580,109 +937,84 @@ result medirProgreso()
             break;
     }
     int deltaF = fuerzaFinal - fuerzaInicial;
-    while (stepperX.distanceToGo() != 0)
-    {
-        if (emergencyStopCheck())
-        {
-            break;
-        }
-        float ratio = stepperX.currentPosition() / largoSteps;
-        fuerzaSetpoint = fuerzaInicial + (deltaF * ratio);
-        unsigned long current_time = millis();
-        if (current_time - last_input_time > 500)
-        {
-            fex.drawProgressBar(20, 70, 200, 25, 100 * ratio, Red, White);
-            last_input_time = current_time;
-        }
-        fuerzaInput = scale.get_units(numSamples); // newton
-        fuerzaPID.Compute();
-        // stepperY.setSpeed(fuerzaOutput);
-        // stepperY.runSpeed();
-        gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
-        stepperX.runSpeed();
-        // stepperX.runSpeedToPosition();
-        // debugln(stepperX.currentPosition());
-    }
+    // while (stepperX.distanceToGo() != 0)
+    // {
+    //     if (emergencyStopCheck())
+    //     {
+    //         break;
+    //     }
+    //     // float ratio = stepperX.currentPosition() / largoSteps;
+    //     fuerzaSetpoint = fuerzaInicial + (deltaF * ratio);
+    //     unsigned long current_time = millis();
+    //     if (current_time - last_input_time > 500)
+    //     {
+    //         fex.drawProgressBar(20, 70, 200, 25, 100 * ratio, Red, White);
+    //         last_input_time = current_time;
+    //     }
+    //     fuerzaInput = scale.get_units(numSamples); // newton
+    //     fuerzaPID.Compute();
+    //     // stepperY.setSpeed(fuerzaOutput);
+    //     // stepperY.runSpeed();
+    //     gfx.drawFloat(fuerzaInput, 0, 100, 70, 1);
+    //     // stepperX.runSpeed();
+    //     stepperX.runSpeedToPosition();
+    //     debugln(stepperX.currentPosition());
+    // }
     debug("volviendo al origen");
-    stepperX.setSpeed(maxSpeedX);
-    stepperX.move(-largoSteps);
-    stepperX.runToPosition();
+    // stepperX.setSpeed(maxSpeedX);
+    // stepperX.move(-largoSteps);
+    // stepperX.runToPosition();
     mainMenu.dirty = true;
     return proceed;
 }
 
 result homing()
 {
-    stepperX.setSpeed(maxSpeedX / 2.0);
-    stepperX.move(-mm2step(300));
+    // stepperX.setSpeed(maxSpeedX / 2.0);
+    // stepperX.move(-mm2step(300));
     while (digitalRead(stopSW))
     {
         if (emergencyStopCheck())
         {
             return proceed;
         }
-        stepperX.runSpeed();
+        // stepperX.runSpeed();
     }
-    stepperX.move(mm2step(300));
+    // stepperX.move(mm2step(300));
     while (!digitalRead(stopSW))
     {
         if (emergencyStopCheck())
         {
             return proceed;
         }
-        stepperX.runSpeed();
+        // stepperX.runSpeed();
     }
-    stepperX.setCurrentPosition(0);
+    // stepperX.setCurrentPosition(0);
     mainMenu.dirty = true;
     return proceed;
 }
 
 result calibrarMotores()
 {
-    AccelStepper stp;
+    FastAccelStepper *stp;
     if (ejeACalibrar == 1)
     {
         stp = stepperX;
     }
     else
     {
-        // stp = stepperY;
+        stp = stepperY;
     }
-    stp.setSpeed(mmxm2stepxs(velocidad));
+    stp->setSpeedInHz(mmxm2stepxs(velocidad));
     debugf("cant veces %d, pasosxmm %d, cantmm %d mm %d step\n", cantVeces, pasosPorMm, cantMm, mm2step(cantMm));
     debugf("velocidad %d mmxm, %f pxs\n", velocidad, mmxm2stepxs(velocidad));
-    stp.setAcceleration(4 * maxSpeedX);
+    stp->setAcceleration(4 * maxSpeedX);
 
     for (int i = 0; i < cantVeces; i++)
     {
-        // stp.move(pasosPorMm * cantMm);
-        // stp.runToPosition();
-
-        // stp.move(-pasosPorMm * cantMm);
-        // stp.runToPosition();
-        // debugln("loop 1");
-
-        stp.move(mm2step(cantMm));
-        stp.runToPosition();
-        while (stp.distanceToGo() != 0)
-        {
-            if (emergencyStopCheck())
-            {
-                break;
-            }
-            stp.run();
-        }
-
+        stp->move(mm2step(cantMm));
         delay(1000);
-        stp.move(-mm2step(cantMm));
-        while (stp.distanceToGo() != 0)
-        {
-            if (emergencyStopCheck())
-            {
-                break;
-            }
-            stp.run();
-        }
+        stp->move(-mm2step(cantMm));
         delay(1000);
         debugln("loop 2");
     }
@@ -690,87 +1022,193 @@ result calibrarMotores()
     return proceed;
 }
 
-result calibrarPID()
+result stepPID()
 {
-    gfx.fillScreen(TFT_BLACK);
-    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    gfx.setTextPadding(80);
-
     updatePrefs(Kp,"Kp");
     updatePrefs(Kd,"Kd");
     updatePrefs(Ki,"Ki");
-    fuerzaSetpoint = fuerzaFinal * 1000;
+    fuerzaSetpoint = 100+fuerzaFinal * 1000;
 
-    gfx.drawString("Acercando", 1, 2, 1);
-    gfx.drawString("I", 125, 2, 1);
-    // gfx.drawString("Input", 160, 50, 1);
 
-    bool fast = true;
-
-    fuerzaPID.SetMode(AUTOMATIC);
+    fuerzaPID.SetMode(MANUAL);
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
     fuerzaPID.SetSampleTime(50);
+
     stepperY->setSpeedInHz(maxSpeedX*fuerzaFinal/20);
     stepperY->setAcceleration(accelerationX * 10);
+    stepperY->setCurrentPosition(0);
 
-    float a = mm2step(0.1);
+    drawGraph(1);
+
+    stepperY->runForward();
     while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
         {
             break;
         }
-        stepperY->runForward();
         fuerzaInput = scale.get_units(numSamples); // newton
-        if (fuerzaInput>50){ stepperY->forceStop();fast = false;break;}
-        gfx.drawFloat(fuerzaInput/1000.0, 3, 140, 2, 1);
+        if (fuerzaInput>50){ stepperY->forceStop();break;}
+        gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
     }
 
-    gfx.fillScreen(TFT_BLACK);
-    gfx.setTextColor(TFT_BLUE, TFT_BLACK);
-    gfx.drawString("E", 1, 2, 1);
-    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    fuerzaPID.SetTunings(Kp, Ki, Kd);
+    int x = 3;
+    int m = 0;
 
-    gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
-    gfx.drawString("I", 25, 2, 1);
-    // gfx.drawString("Error", 120, 70, 1);
-    gfx.setTextColor(TFT_RED, TFT_BLACK);
-    gfx.drawString("O", 140, 2, 1);
-    gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-    // gfx.drawString("V", 120, 110, 1);
+    stepperY->setCurrentPosition(mm2step(0.5));
+    stepperY->forceStop();
+    stepperY->setAcceleration(accelerationX*10);
+    stepperY->applySpeedAcceleration();
+    delay(100);
+    float ceroCelda = scale.get_units(10);
 
-    // gfx.drawLine(2, 10, 2, 133, TFT_WHITE);
-    // gfx.drawLine(2, 133, 240, 133, TFT_WHITE);
-    float f = map(fuerzaSetpoint, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
-    float O = map(0, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
-    float dy = f-O;
-    gfx.drawLine(0, f, 240, f, TFT_BLUE);
-    gfx.drawLine(0, O, 240, O, TFT_WHITE);
-    gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
-    gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
-    gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
-    // gfx.drawString("f",10,f,1);
-    // gfx.drawString("O",10,O,1);
-    // gfx.drawString("O+2*dy",100,O+2*dy,1);
-    // gfx.drawString("O+3*dy",150,O+3*dy,1);
-    // gfx.drawString("O-dy",200,O-dy,1);
+    while (m<100)
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            double altura = fuerzaInput - ceroCelda;
+            gfx.drawFloat(altura/1000.0, 3, 50, 1, 1);
+            float a = map(altura, -1000, 1000, 130, 18);
+            monitorf("%f\t%f\t%f\n", current_time/1000.0, 0.0, altura);
+            gfx.drawPixel(x, a, TFT_GREEN);
+            x++;
+            m++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+
+    }
+
+    drawGraph(2);
+    drawGraph(4);
+    drawGraph(6);
+
+    nav.poll(); // para que aparezca el ON en el menu
+    int suma = 0;
+    int cantidad = 50;
+    for (int i = 0; i < cantidad; i++)
+    {
+        suma += analogRead(joyX);
+    }
+    float bufferMaxX = (suma / cantidad) + buffer;
+    float bufferMinX = (suma / cantidad) - buffer;
+    suma = 0;
+    for (int i = 0; i < cantidad; i++)
+    {
+        suma += analogRead(joyY);
+    }
+    float bufferMaxY = (suma / cantidad) + buffer;
+    float bufferMinY = (suma / cantidad) - buffer;
+    debugf("buffer maxX: %f\n", bufferMaxX);
+    debugf("buffer minX: %f\n", bufferMinX);
+    debugf("buffer maxY: %f\n", bufferMaxY);
+    debugf("buffer minY: %f\n", bufferMinY);
+
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            fuerzaInput = scale.get_units(numSamples);
+            double altura = fuerzaInput - ceroCelda;
+            int joyY_value = analogRead(joyY);
+            float desired_speedY = - map(joyY_value, 0, 4095, -100, 100);
+            stepperY->setSpeedInHz(abs(desired_speedY));
+            if (not(joyY_value > bufferMinY && bufferMaxY > joyY_value))
+            {
+                if (desired_speedY < 0)
+                {
+                    stepperY->runBackward();
+                }
+                else if (desired_speedY > 0)
+                {
+                    stepperY->runForward();
+                }
+            }
+            if (joyY_value > bufferMinY && bufferMaxY > joyY_value)
+            {
+                stepperY->stopMove();
+            }
+            monitorf("%f\t%f\t%f\n", current_time/1000.0, desired_speedY, altura);
+            double error = fuerzaSetpoint - fuerzaInput;
+            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+            gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
+
+            float i = map(fuerzaInput, 0, 1.2*fuerzaFinal, 130, 18);
+            float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinal, 130, 18);
+            float o = map(fuerzaOutput, -100, 100, 130, 18);
+            gfx.drawPixel(x, s, TFT_GREEN);
+            gfx.drawPixel(x, i, TFT_YELLOW);
+            gfx.drawPixel(x, o, TFT_RED);
+            x++;
+            if (x==240) {
+                x=3;
+                drawGraph(6);
+            }
+            last_input_time = current_time;
+        }
+
+    }
+    stepperY->forceStop();
+    stepperY->setSpeedInHz(maxSpeedX);
+    stepperY->moveTo(0);
+    nav.refresh();
+    mainMenu.dirty = true;
+    return proceed;
+}
+result calibrarPID()
+{
+    updatePrefs(Kp,"Kp");
+    updatePrefs(Kd,"Kd");
+    updatePrefs(Ki,"Ki");
+    fuerzaSetpoint = 100+fuerzaFinal * 1000;
+
+
+    fuerzaPID.SetMode(AUTOMATIC);
+    fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
+    fuerzaPID.SetSampleTime(50);
+
+    stepperY->setSpeedInHz(maxSpeedX*fuerzaFinal/20);
+    stepperY->setAcceleration(accelerationX * 10);
+    stepperY->setCurrentPosition(0);
+
+    drawGraph(1);
+
+    stepperY->runForward();
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        fuerzaInput = scale.get_units(numSamples); // newton
+        if (fuerzaInput>50){ stepperY->forceStop();break;}
+        gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+    }
 
     int x = 3;
-
-
-    // // 0.1
-    // stepperY->setSpeedInHz(maxSpeedX*10);
-    // stepperY->applySpeedAcceleration();
 
     // 0.2
     stepperY->setAcceleration(accelerationX*10);
     stepperY->applySpeedAcceleration();
 
-    // // 0.3 le pongo mas velocidad y aceleracion: va mas rapido pero es mas choppy
-    // stepperY->setSpeedInHz(maxSpeedX);
-    // stepperY->setAcceleration(accelerationX*1000);
-    // stepperY->applySpeedAcceleration();
+    drawGraph(2);
+    drawGraph(4);
+    drawGraph(6);
 
     while (digitalRead(joySW))
     {
@@ -779,28 +1217,10 @@ result calibrarPID()
             break;
         }
 
-        // // 0.1 funciona pero hay que ajustar los numeros
-        // unsigned long current_time = millis();
-        // if (current_time - last_input_time > 50)
-        // {
-        //     fuerzaInput = scale.get_units(numSamples); // newton
-        //     fuerzaPID.Compute();
-        //     stepperY->moveByAcceleration(100*fuerzaOutput);
-        //     double error = fuerzaSetpoint - fuerzaInput;
-        //     gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
-        //     gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
-        //     gfx.drawFloat(100*fuerzaOutput, 0, 100, 90, 1);
-        //     gfx.drawFloat(1000*stepperY->getCurrentSpeedInMilliHz(), 0, 100, 110, 1);
-        //     last_input_time = current_time;
-        // }
-        
-        // 0.2 aver set speed y runForward
-        // funciona con kp=0.02, pero converge muy lento
-        // lo estoy probando denuevo, por ahi le puedo subir el kp y meterle I D
         unsigned long current_time = millis();
         if (current_time - last_input_time > 50)
         {
-            fuerzaInput = scale.get_units(numSamples); // newton
+            fuerzaInput = scale.get_units(numSamples);
             fuerzaPID.Compute();
             if (fuerzaOutput>0.2){
                 stepperY->setSpeedInHz(fuerzaOutput);
@@ -814,39 +1234,24 @@ result calibrarPID()
             gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
             gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
 
-            float i = map(fuerzaInput, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
-            float o = map(fuerzaOutput, -1*fuerzaSetpoint, 3*fuerzaSetpoint, 130, 18);
+            float i = map(fuerzaInput, 0, 1.2*fuerzaFinal, 130, 18);
+            float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinal, 130, 18);
+            float o = map(fuerzaOutput, -100, 100, 130, 18);
+            gfx.drawPixel(x, s, TFT_GREEN);
             gfx.drawPixel(x, i, TFT_YELLOW);
             gfx.drawPixel(x, o, TFT_RED);
             x++;
             if (x==240) {
                 x=3;
-                gfx.fillRect(0,20,240,135,TFT_BLACK);
-                gfx.drawLine(0, f, 240, f, TFT_BLUE);
-                gfx.drawLine(0, O, 240, O, TFT_WHITE);
-                gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
-                gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
-                gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
+                drawGraph(6);
             }
             last_input_time = current_time;
         }
 
-        // // 0.3 funciona bien pero es medio choppy
-        // unsigned long current_time = millis();
-        // if (current_time - last_input_time > 50)
-        // {
-        //     fuerzaInput = scale.get_units(numSamples); // newton
-        //     fuerzaPID.Compute();
-        //     stepperY->move(fuerzaOutput);
-        //     double error = fuerzaSetpoint - fuerzaInput;
-        //     gfx.drawFloat(fuerzaInput/1000.0, 3, 100, 50, 1);
-        //     gfx.drawFloat(error/1000.0, 3, 100, 70, 1);
-        //     gfx.drawFloat(fuerzaOutput, 0, 100, 95, 1);
-        //     last_input_time = current_time;
-        // }
-
     }
     stepperY->forceStop();
+    stepperY->setSpeedInHz(maxSpeedX);
+    stepperY->moveTo(0);
     nav.refresh();
     mainMenu.dirty = true;
     return proceed;
@@ -868,8 +1273,19 @@ result toggleCalibracionCelda()
 
 void initMotors()
 {
-    stepperX.setMaxSpeed(maxSpeedX);
-    stepperX.setAcceleration(accelerationX);
+    // stepperX.setMaxSpeed(maxSpeedX);
+    // stepperX.setAcceleration(accelerationX);
+
+    engine.init();
+    stepperX = engine.stepperConnectToPin(stepX);
+    stepperX->setDirectionPin(dirX);
+    stepperX->setSpeedInHz(maxSpeedX);
+    stepperX->setAcceleration(accelerationX);
+
+    stepperY = engine.stepperConnectToPin(stepY);
+    stepperY->setDirectionPin(dirY,false);
+    stepperY->setSpeedInHz(maxSpeedX);
+    stepperY->setAcceleration(accelerationX);
 
     driverX.begin();
     driverX.rms_current(600);
@@ -877,24 +1293,79 @@ void initMotors()
     driverX.pwm_autoscale(1);
     driverX.microsteps(MICROSTEP);
 
-    engine.init();
-    stepperY = engine.stepperConnectToPin(stepY);
-    stepperY->setDirectionPin(dirY,false);
-    stepperY->setSpeedInHz(maxSpeedX);
-    stepperY->setAcceleration(accelerationX);
-
     driverY.begin();
     driverY.rms_current(600);
     driverY.en_pwm_mode(1);
     driverY.pwm_autoscale(1);
     driverY.microsteps(MICROSTEP);
 
-    stepperX.move(mm2step(1));
+    stepperX->move(mm2step(1));
+    stepperX->move(mm2step(-1));
     stepperY->move(mm2step(-1));
-    while (stepperX.distanceToGo() != 0)
+    stepperY->move(mm2step(1));
+}
+
+void drawGraph(int stage)
+{
+    gfx.setTextPadding(80);
+
+    switch (stage)
     {
-        stepperX.run();
+        case 1:
+            gfx.fillScreen(TFT_BLACK);
+            gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+            gfx.drawString("A", 1, 2, 1);
+            gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
+            gfx.drawString("I", 25, 2, 1);
+            gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+            break;
+        case 2:
+            gfx.fillScreen(TFT_BLACK);
+            gfx.setTextColor(TFT_BLUE, TFT_BLACK);
+            gfx.drawString("E", 1, 2, 1);
+            break;
+        case 3:
+            gfx.fillScreen(TFT_BLACK);
+            gfx.setTextColor(TFT_GREEN, TFT_BLACK);
+            gfx.drawString("M", 1, 2, 1);
+            break;
+        case 4:
+            gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
+            gfx.drawString("I", 25, 2, 1);
+            // gfx.drawString("Error", 120, 70, 1);
+            gfx.setTextColor(TFT_RED, TFT_BLACK);
+            gfx.drawString("O", 140, 2, 1);
+            gfx.setTextColor(TFT_WHITE, TFT_BLACK);
+            // gfx.drawString("V", 120, 110, 1);
+            break;
+        case 5:
+            gfx.fillRect(0,20,240,135,TFT_BLACK);
+            f = map(fuerzaFinal, -1*fuerzaFinal, 3*fuerzaFinal, 130, 18);
+            O = map(0, -1*fuerzaFinal, 3*fuerzaFinal, 130, 18);
+            dy = f-O;
+            gfx.drawLine(0, f, 240, f, TFT_BLUE);
+            gfx.drawLine(0, O, 240, O, TFT_WHITE);
+            gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
+            gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
+            gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
+            break;
+        case 6: //para el medir, grafico completo
+            gfx.fillRect(0,20,240,135,TFT_BLACK);
+            f = map(fuerzaFinal, 0, 1.2*fuerzaFinal, 130, 18);
+            O = map(0, 0, 1.2*fuerzaFinal, 130, 18);
+            dy = f-O;
+            gfx.drawLine(0, f, 240, f, TFT_BLUE);
+            gfx.drawLine(0, O, 240, O, TFT_WHITE);
+            // gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
+            // gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
+            // gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
+            gfx.drawLine(0, map(0, -100, 100, 130, 18),
+                         0, map(0, -100, 100, 130, 18), TFT_BROWN);
+            break;
+
     }
+
+
 }
 
 void initPreferences()
@@ -907,8 +1378,6 @@ void initPreferences()
         prefs.putDouble("Kp", Kp);
         prefs.putDouble("Ki", Ki);
         prefs.putDouble("Kd", Kd);
-        prefs.putInt("TOL", TOL);
-        prefs.putFloat("MULT", MULT);
         prefs.putFloat("CALI", CALIBRATION_FACTOR);
         prefs.putInt("fuerzaInicial", fuerzaInicial);
         prefs.putInt("fuerzaFinal", fuerzaFinal);
@@ -928,8 +1397,6 @@ void initPreferences()
         Kp = prefs.getDouble("Kp");
         Ki = prefs.getDouble("Ki");
         Kd = prefs.getDouble("Kd");
-        TOL = prefs.getInt("TOL");
-        MULT = prefs.getFloat("MULT");
         CALIBRATION_FACTOR = prefs.getFloat("CALI");
         fuerzaInicial = prefs.getInt("fuerzaInicial");
         fuerzaFinal = prefs.getInt("fuerzaFinal");
@@ -1001,23 +1468,28 @@ bool emergencyStopCheck()
 
 void emergencyStop()
 {
-    int speedX = stepperX.speed();
-    stepperX.setAcceleration(accelerationX * 10);
-    stepperX.stop();
+    // int speedX = stepperX.speed();
+    // stepperX.setAcceleration(accelerationX * 10);
+    // stepperX.stop();
+    //
+    int speedX = stepperX->getSpeedInMilliHz();
+    stepperX->setAcceleration(accelerationX * 10);
+    stepperX->applySpeedAcceleration();
+    stepperY->stopMove();
     int speedY = stepperY->getSpeedInMilliHz();
     stepperY->setAcceleration(accelerationX * 10);
     stepperY->applySpeedAcceleration();
     stepperY->stopMove();
 
-    stepperX.setAcceleration(accelerationX);
+    // stepperX.setAcceleration(accelerationX);
     stepperY->setAcceleration(accelerationX);
     if (speedX < 0)
     {
-        stepperX.move(mm2step(5));
+        stepperX->move(mm2step(5));
     }
     else if (speedX > 0)
     {
-        stepperX.move(mm2step(-5));
+        stepperX->move(mm2step(-5));
     }
 
     if (speedY < 0)
