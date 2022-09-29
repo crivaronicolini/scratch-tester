@@ -971,27 +971,26 @@ result medir()
     updatePrefs(fuerzaFinal,"fuerzaFinal");
     updatePrefs(largo,"largo");
 
-    fuerzaSetpoint = fuerzaInicial * 1000;
+    fuerzaSetpoint = -100 + fuerzaInicial * 1000;
     float speed = maxSpeedX*fuerzaInicial/40;
     if (fuerzaInicial == 0) {
-        speed = 800; // si fuerza inicial es cero no le gusta
+        speed = 800; // si fuerza inicial es cero no le gusta al set speed
     }
     int fuerzaFinalM = fuerzaFinal * 1000;
-    int fuerzaInicialM = fuerzaInicial * 1000;
+    int fuerzaInicialM = -100 + fuerzaInicial * 1000;
 
     float ratio = 0;
     int deltaF = fuerzaFinal - fuerzaInicial;
     int deltaFM = fuerzaFinalM - fuerzaInicialM;
     float largoSteps = mm2step(largo);
 
-    // float norm = deltaF*largo*velocidad/(5*5*2); // normalizacion: el factor es 1 para los parametros de calibracion
-    float norm = 1;
+    float norm = deltaF*largo*velocidad/(5*5*20); // normalizacion: el factor es 1 para los parametros de calibracion
     int errAbs = 0;
 
-    fuerzaPID.SetMode(AUTOMATIC);
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
     fuerzaPID.SetSampleTime(50);
-    fuerzaPID.SetTunings(eKp*norm, eKi*norm, eKd*norm);
+    fuerzaPID.SetTunings(Kp*norm, Ki*norm, Kd*norm);
+    // fuerzaPID.SetTunings(eKp*norm, eKi*norm, eKd*norm);
 
     // ACERCAMIENTO
     stepperX->setCurrentPosition(0);
@@ -1048,6 +1047,8 @@ result medir()
     drawGraph(4);
     drawGraph(6);
 
+    stepperY->setSpeedInHz(200);
+    stepperY->runForward();
     while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
@@ -1061,20 +1062,21 @@ result medir()
             fuerzaInput = scale.get_units(numSamples); // newton
             double error = fuerzaSetpoint - fuerzaInput;
             // para ver que estamos en la fuerza inicial
-            if ((-TOL < error) && (error < TOL))
+            // if ((-TOL < error) && (error < TOL))
+            if (error < -TOL) // menos Tol porque quiero que corte TOL arriba del setpoint
             {
                 stepperY->forceStop();
                 break;
             }
-            fuerzaPID.Compute();
-            if (fuerzaOutput>0){
-                stepperY->setSpeedInHz(fuerzaOutput);
-                stepperY->runForward();
-            } else if (fuerzaOutput<0){
-                stepperY->setSpeedInHz(-fuerzaOutput);
-                stepperY->runBackward();
-            }
-            else { stepperY->stopMove();}
+            // fuerzaPID.Compute();
+            // if (fuerzaOutput>0){
+            //     stepperY->setSpeedInHz(fuerzaOutput);
+            //     stepperY->runForward();
+            // } else if (fuerzaOutput<0){
+            //     stepperY->setSpeedInHz(-fuerzaOutput);
+            //     stepperY->runBackward();
+            // }
+            // else { stepperY->stopMove();}
             errAbs += abs(error)/10;
             // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
             monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%f\t%f\t%f\t\n",
@@ -1104,7 +1106,6 @@ result medir()
     }
 
     Serial.println("\nMidiendo");
-    fuerzaPID.SetTunings(Kp*norm, Ki*norm, Kd*norm);
     int errAbsEstabilizacion = errAbs;
     errAbs =0;
     x = 3;
@@ -1115,6 +1116,7 @@ result medir()
     drawGraph(4);
     drawGraph(6);
 
+    fuerzaPID.SetMode(AUTOMATIC);
     stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
     stepperX->move(largoSteps);
 
