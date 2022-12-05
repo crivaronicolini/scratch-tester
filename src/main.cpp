@@ -187,6 +187,7 @@ void testPrefs();
 result resetearConfig();
 result despejar();
 result medir();
+result medircte();
 result mapear();
 result definirOrigen();
 result homing();
@@ -358,6 +359,10 @@ TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
         VALUE("", 1, medir, enterEvent),
         VALUE("", 0, doNothing, noEvent));
 
+TOGGLE(toggleDummy, subMenuToggleMedirCte, "Medir F cte", doNothing, noEvent, noStyle,
+        VALUE("", 1, medircte, enterEvent),
+        VALUE("", 0, doNothing, noEvent));
+
 TOGGLE(toggleDummy, subMenuToggleMapear, "Mapear", doNothing, noEvent, noStyle,
         VALUE("", 1, mapear, enterEvent),
         VALUE("", 0, doNothing, noEvent));
@@ -406,6 +411,7 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
      SUBMENU(subMenuToggleDefinirOrigen),
      SUBMENU(subMenuToggleMedir),
+     SUBMENU(subMenuToggleMedirCte),
      SUBMENU(subMenuToggleDespejar),
      // OP("Homing", homing, enterEvent),
      SUBMENU(subMenuCalibrar));
@@ -500,6 +506,8 @@ void loop()
         lastMenuFrame = millis();
         nav.poll();
         // monitorf("$%f,%d",1.0);
+        // monitorf("%f,%d\n",9.0, 3);
+        // Serial.println(9);
     }
 }
 
@@ -587,6 +595,8 @@ result definirOrigen()
             last_input_time = current_time;
         }
     }
+    stepperY->stopMove();
+    stepperX->stopMove();
     return proceed;
 }
 
@@ -967,6 +977,239 @@ result gridSearch()
 
 }
 
+result medircte()
+{
+    updatePrefs(Kp,"Kp");
+    updatePrefs(Kd,"Kd");
+    updatePrefs(Ki,"Ki");
+    updatePrefs(velocidad,"velocidad");
+    updatePrefs(fuerzaInicial,"fuerzaInicial");
+    updatePrefs(fuerzaFinal,"fuerzaFinal");
+    updatePrefs(largo,"largo");
+
+    fuerzaSetpoint = -100 + fuerzaInicial * 1000;
+    float speed = maxSpeedX*fuerzaInicial/40;
+    if (fuerzaInicial == 0) {
+        speed = 800; // si fuerza inicial es cero no le gusta al set speed
+    }
+    int fuerzaFinalM = fuerzaFinal * 1000;
+    int fuerzaInicialM = -100 + fuerzaInicial * 1000;
+
+    int deltaF = fuerzaFinal - fuerzaInicial;
+    int deltaFM = fuerzaFinalM - fuerzaInicialM;
+    float largoSteps = mm2step(largo);
+    double error = 0;
+
+    // float norm = deltaF*largo*velocidad/(5*5*20); // normalizacion: el factor es 1 para los parametros de calibracion
+    float norm = 1;
+    int errAbs = 0;
+
+    fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
+    fuerzaPID.SetSampleTime(50);
+    fuerzaPID.SetTunings(Kp*norm, Ki*norm, Kd*norm);
+    // fuerzaPID.SetTunings(eKp*norm, eKi*norm, eKd*norm);
+
+    // ACERCAMIENTO
+    stepperX->setCurrentPosition(0);
+
+    stepperY->setSpeedInHz(speed);
+    stepperY->setAcceleration(accelerationX * 10);
+    drawGraph(1);
+    drawGraph(6);
+    int x = 3;
+    // monitorln("===");
+    // monitorf("deltaF= %d, Kp= %f, Kpn= %f, Ki= %f, Kd= %f, fI= %d\n",deltaF,Kp,Kp*norm,Ki, Kd, fuerzaInicial);
+    // monitorf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "t", "x", "error", "fOut", "fIn", "fSet", "y", "errAcc");
+
+    stepperY->runForward();
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        fuerzaInput = scale.get_units(numSamples); // newton
+        if (fuerzaInput>50){ stepperY->forceStop();break;}
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            // monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
+            error = fuerzaSetpoint - fuerzaInput;
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+                    current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
+                    fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
+            #if GRAPH == 1
+                gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+                float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+                gfx.drawPixel(x, i, TFT_YELLOW);
+                x++;
+
+                if (x==240) {
+                    x=3;
+                    drawGraph(6);
+                }
+            #endif
+            last_input_time = current_time;
+        }
+    }
+
+
+    stepperY->setCurrentPosition(mm2step(0.5));
+    x = 3;
+    int n = 0;
+    TOL = 100 + (TOL*deltaF / 5);
+
+    // ESTABILIZACION
+
+    drawGraph(2);
+    drawGraph(4);
+    drawGraph(6);
+
+    stepperY->setSpeedInHz(speed/4);
+    stepperY->runForward();
+    while (digitalRead(joySW))
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+        fuerzaInput = scale.get_units(numSamples); // newton
+        error = fuerzaSetpoint - fuerzaInput;
+        // para ver que estamos en la fuerza inicial
+        // if ((-TOL < error) && (error < TOL))
+        if (error < TOL) // menos Tol porque quiero que corte TOL arriba del setpoint
+        {
+            stepperY->forceStop();
+            break;
+        }
+
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            // fuerzaPID.Compute();
+            // if (fuerzaOutput>0){
+            //     stepperY->setSpeedInHz(fuerzaOutput);
+            //     stepperY->runForward();
+            // } else if (fuerzaOutput<0){
+            //     stepperY->setSpeedInHz(-fuerzaOutput);
+            //     stepperY->runBackward();
+            // }
+            // else { stepperY->stopMove();}
+            errAbs += abs(error)/10;
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+                    current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
+                    fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
+
+            #if GRAPH == 1
+                gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+                gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
+
+                float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+                float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinalM, 130, 18);
+                float o = map(fuerzaOutput, -100, 100, 130, 18);
+                gfx.drawPixel(x, i, TFT_YELLOW);
+                gfx.drawPixel(x, s, TFT_GREEN);
+                gfx.drawPixel(x, o, TFT_RED);
+                x++;
+                if (x==240) {
+                    x=3;
+                    drawGraph(6);
+                }
+            #endif
+
+            last_input_time = current_time;
+
+        }
+    }
+    // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+            0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+    int errAbsEstabilizacion = errAbs;
+    errAbs =0;
+    x = 3;
+    n = 0;
+
+    // MEDICION
+    drawGraph(3);
+    drawGraph(4);
+    drawGraph(6);
+
+    fuerzaPID.SetMode(AUTOMATIC);
+    stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
+    stepperX->move(largoSteps);
+
+    while (digitalRead(joySW) && stepperX->isRunning())
+    {
+        if (emergencyStopCheck())
+        {
+            break;
+        }
+
+        unsigned long current_time = millis();
+        if (current_time - last_input_time > 50)
+        {
+            fuerzaInput = scale.get_units(numSamples); // newton
+            fuerzaPID.Compute();
+            if (fuerzaOutput>0){
+                stepperY->setSpeedInHz(fuerzaOutput);
+                stepperY->runForward();
+            } else if (fuerzaOutput<0){
+                stepperY->setSpeedInHz(-fuerzaOutput);
+                stepperY->runBackward();
+            }
+            else { stepperY->stopMove();}
+            error = fuerzaSetpoint - fuerzaInput;
+            errAbs += abs(error)/10;
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+                    current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
+                    fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
+
+            #if GRAPH == 1
+                gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
+                gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
+                // gfx.drawFloat(fuerzaSetpoint, 3, 170, 30, 1);
+
+                float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
+                float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinalM, 130, 18);
+                float o = map(fuerzaOutput, -100, 100, 130, 18);
+                float e = map(error, -1000, 1000, 130, 18);
+                gfx.drawPixel(x, s, TFT_GREEN);
+                gfx.drawPixel(x, i, TFT_YELLOW);
+                gfx.drawPixel(x, o, TFT_RED);
+                gfx.drawPixel(x, e, TFT_BLUE);
+                x++;
+                if (x==240) {
+                    x=3;
+                    drawGraph(6);
+                }
+            #endif
+            last_input_time = current_time;
+        }
+
+    }
+    // monitorf("errAbsEstabilizacion= %d, errAbs= %d\n", errAbsEstabilizacion, errAbs);
+    if (not (stepperX->isRunning())) { toggleDummy = 0; }
+    stepperX->forceStop();
+    stepperY->forceStop();
+
+    stepperX->setSpeedInHz(2*maxSpeedX);
+    stepperY->setSpeedInHz(2*maxSpeedX);
+
+    stepperY->moveTo(0);
+    delay(20);
+    stepperX->moveTo(0);
+    nav.refresh();
+    fuerzaPID.SetMode(MANUAL);
+    mainMenu.dirty = true;
+    return proceed;
+}
+
 result medir()
 {
     updatePrefs(Kp,"Kp");
@@ -1008,9 +1251,9 @@ result medir()
     drawGraph(1);
     drawGraph(6);
     int x = 3;
-    monitorln("===");
-    monitorf("deltaF= %d, Kp= %f, Kpn= %f, Ki= %f, Kd= %f, fI= %d\n",deltaF,Kp,Kp*norm,Ki, Kd, fuerzaInicial);
-    monitorf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "t", "x", "error", "fOut", "fIn", "fSet", "y", "errAcc");
+    // monitorln("===");
+    // monitorf("deltaF= %d, Kp= %f, Kpn= %f, Ki= %f, Kd= %f, fI= %d\n",deltaF,Kp,Kp*norm,Ki, Kd, fuerzaInicial);
+    // monitorf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "t", "x", "error", "fOut", "fIn", "fSet", "y", "errAcc");
 
     stepperY->runForward();
     while (digitalRead(joySW))
@@ -1026,7 +1269,8 @@ result medir()
         {
             // monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
             error = fuerzaSetpoint - fuerzaInput;
-            monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
             #if GRAPH == 1
@@ -1052,11 +1296,13 @@ result medir()
 
     // ESTABILIZACION
 
+    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+            0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     drawGraph(2);
     drawGraph(4);
     drawGraph(6);
 
-    stepperY->setSpeedInHz(speed/2);
+    stepperY->setSpeedInHz(speed/4);
     stepperY->runForward();
     while (digitalRead(joySW))
     {
@@ -1068,6 +1314,7 @@ result medir()
         error = fuerzaSetpoint - fuerzaInput;
         // para ver que estamos en la fuerza inicial
         // if ((-TOL < error) && (error < TOL))
+        if (fuerzaInput>fuerzaSetpoint*1.1){ stepperY->forceStop();break;}
         if (error < TOL) // menos Tol porque quiero que corte TOL arriba del setpoint
         {
             stepperY->forceStop();
@@ -1088,7 +1335,8 @@ result medir()
             // else { stepperY->stopMove();}
             errAbs += abs(error)/10;
             // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
-            monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
 
@@ -1113,7 +1361,8 @@ result medir()
 
         }
     }
-    monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+    // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
             0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     int errAbsEstabilizacion = errAbs;
@@ -1155,7 +1404,8 @@ result medir()
             error = fuerzaSetpoint - fuerzaInput;
             errAbs += abs(error)/10;
             // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
-            monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
 
