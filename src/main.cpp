@@ -119,6 +119,7 @@ int fuerzaInicial = 0; // N
 int fuerzaFinal = 1;   // N
 int velocidad = 100;   // mm x minuto
 int largo = 5;         // mm
+int loadingRate = 2;   // N/mm
 float separacion = 0.2;
 
 // params PID
@@ -184,6 +185,7 @@ void updatePrefs(float value, const char* key);
 void updatePrefs(int value, const char* key);
 void updatePrefs(double value, const char* key);
 void testPrefs();
+result updateLargo();
 result resetearConfig();
 result despejar();
 result medir();
@@ -263,55 +265,42 @@ public:
     }
 };
 
-result showEvent(const char *aver, eventMask e, navNode &nav, prompt &item)
-{
-    
-    Serial.println();
-    Serial.println(aver);
-    Serial.println("========");
-    Serial.print("Event for target: 0x");
-    Serial.println((long)nav.target, HEX);
-    Serial.println((long)&nav.target);
-    showPath(*nav.root);
-    Serial.print(e);
-    switch (e)
-    {
-    case noEvent: // just ignore all stuff
-        Serial.println(" noEvent");
-        break;
-    case activateEvent: // this item is about to be active (system event)
-        Serial.println(" activateEvent");
-        break;
-    case enterEvent: // entering navigation level (this menu is now active)
-        Serial.println(" enterEvent");
-        break;
-    case exitEvent: // leaving navigation level
-        Serial.println(" exitEvent");
-        break;
-    case returnEvent: // TODO:entering previous level (return)
-        Serial.println(" returnEvent");
-        break;
-    case focusEvent: // element just gained focus
-        Serial.println(" focusEvent");
-        break;
-    case blurEvent: // element about to lose focus
-        Serial.println(" blurEvent");
-        break;
-    case selFocusEvent: // TODO:child just gained focus
-        Serial.println(" selFocusEvent");
-        break;
-    case selBlurEvent: // TODO:child about to lose focus
-        Serial.println(" selBlurEvent");
-        break;
-    case updateEvent: // Field value has been updated
-        Serial.println(" updateEvent");
-        break;
+
+result showEvent(eventMask e,navNode& nav,prompt& item) {
+  Serial.println();
+  Serial.println("========");
+  Serial.print("Event for target: 0x");
+  Serial.println((long)nav.target,HEX);
+  showPath(*nav.root);
+  Serial.print(e);
+  switch(e) {
+    case noEvent://just ignore all stuff
+      Serial.println(" noEvent");break;
+    case activateEvent://this item is about to be active (system event)
+      Serial.println(" activateEvent");break;
+    case enterEvent://entering navigation level (this menu is now active)
+      Serial.println(" enterEvent");break;
+    case exitEvent://leaving navigation level
+      Serial.println(" exitEvent");break;
+    case returnEvent://TODO:entering previous level (return)
+      Serial.println(" returnEvent");break;
+    case focusEvent://element just gained focus
+      Serial.println(" focusEvent");break;
+    case blurEvent://element about to lose focus
+      Serial.println(" blurEvent");break;
+    case selFocusEvent://TODO:child just gained focus
+      Serial.println(" selFocusEvent");break;
+    case selBlurEvent://TODO:child about to lose focus
+      Serial.println(" selBlurEvent");break;
+    case updateEvent://Field value has been updated
+      Serial.println(" updateEvent");break;
     case anyEvent:
-        Serial.println(" anyEvent");
-        break;
-    }
-    return proceed;
+      Serial.println(" anyEvent");break;
+  }
+  return proceed;
 }
+
+
 
 //////////////////////////////////////////////////////////
 // Start ArduinoMenu
@@ -405,10 +394,10 @@ TOGGLE(toggleDummyDespejar, subMenuToggleDespejar,"Despejar muestra", doNothing,
 
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuCalibrarPID),
-     FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
-     FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
+     FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
+     FIELD(largo, "Largo:", "mm", 0, 20, 0, 0, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
-     FIELD(largo, "Largo:", "mm", 0, 20, 1, 1, doNothing, noEvent, noStyle),
      SUBMENU(subMenuToggleDefinirOrigen),
      SUBMENU(subMenuToggleMedir),
      SUBMENU(subMenuToggleMedirCte),
@@ -1244,8 +1233,8 @@ result medir()
     // fuerzaPID.SetTunings(eKp*norm, eKi*norm, eKd*norm);
 
     // ACERCAMIENTO
-    stepperX->setCurrentPosition(0);
 
+    stepperX->setCurrentPosition(0);
     stepperY->setSpeedInHz(speed);
     stepperY->setAcceleration(accelerationX * 10);
     drawGraph(1);
@@ -1686,7 +1675,6 @@ result calibrarPID()
 
     int x = 3;
 
-    // 0.2
     stepperY->setAcceleration(accelerationX*10);
     stepperY->applySpeedAcceleration();
 
@@ -1853,6 +1841,15 @@ void drawGraph(int stage)
 
     }
 #endif
+}
+
+result updateLargo()
+{
+    // calcula el nuevo largo segun el loadingRate, y limpia el menu
+    largo = (fuerzaFinal - fuerzaInicial) / loadingRate;
+    mainMenu[3].dirty = true;
+    debugln("largo updated");
+    return proceed;
 }
 
 void initPreferences()
