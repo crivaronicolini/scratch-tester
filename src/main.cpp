@@ -119,7 +119,7 @@ int fuerzaInicial = 0; // N
 int fuerzaFinal = 1;   // N
 int velocidad = 100;   // mm x minuto
 int largo = 5;         // mm
-int loadingRate = 2;   // N/mm
+int loadingRate = 10;   // N/mm
 float separacion = 0.2;
 
 // params PID
@@ -318,7 +318,7 @@ int ejeACalibrar = 1;
 int toggleDummy = 0;
 int toggleDummyDespejar = 0;
 
-MENU(subMenuCalibrarCelda, "Calibracion de Celda de Carga", toggleCalibracionCelda,(eventMask)(enterEvent|exitEvent), wrapStyle,
+MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,(eventMask)(enterEvent|exitEvent), wrapStyle,
      FIELD(reading, "F:","N",-1,100000,0,0,doNothing, noEvent, noStyle),
      FIELD(CALIBRATION_FACTOR, "F calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(numSamples, "N muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
@@ -328,7 +328,7 @@ TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing,
        VALUE("X", 1, doNothing, noEvent),
        VALUE("Y", 2, doNothing, noEvent));
 
-MENU(subMenuCalibrarMotores, "Calibracion de Motores", doNothing, noEvent, wrapStyle,
+MENU(subMenuCalibrarMotores, "Motores", doNothing, noEvent, wrapStyle,
      OP("Calibrar", calibrarMotores, enterEvent),
      SUBMENU(subMenuToggleEjeACalibrar),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing, noEvent, noStyle),
@@ -381,6 +381,7 @@ MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuCalibrarMotores),
      FIELD(TOL, "Tolerancia", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
      FIELD(separacion, "Separacion", "", 0, 5, 1, 0.1, doNothing, noEvent, noStyle),
+     FIELD(loadingRate, "Loading rate N/mm", "", 0, 100, 5, 1, doNothing, noEvent, noStyle),
      OP("Resetear configuracion", resetearConfig, enterEvent),
      EXIT("<- Volver"));
 
@@ -976,6 +977,8 @@ result medircte()
     updatePrefs(fuerzaFinal,"fuerzaFinal");
     updatePrefs(largo,"largo");
 
+    float TOLmod = TOL;
+
     fuerzaSetpoint = -100 + fuerzaInicial * 1000;
     float speed = maxSpeedX*fuerzaInicial/40;
     if (fuerzaInicial == 0) {
@@ -1047,7 +1050,7 @@ result medircte()
     stepperY->setCurrentPosition(mm2step(0.5));
     x = 3;
     int n = 0;
-    TOL = 100 + (TOL*deltaF / 5);
+    TOLmod = 100 + (TOL*deltaF / 5);
 
     // ESTABILIZACION
 
@@ -1067,7 +1070,7 @@ result medircte()
         error = fuerzaSetpoint - fuerzaInput;
         // para ver que estamos en la fuerza inicial
         // if ((-TOL < error) && (error < TOL))
-        if (error < TOL) // menos Tol porque quiero que corte TOL arriba del setpoint
+        if (error < TOLmod) // menos Tol porque quiero que corte TOL arriba del setpoint
         {
             stepperY->forceStop();
             break;
@@ -1201,6 +1204,10 @@ result medircte()
 
 result medir()
 {
+    // reset el queue de los motores, trato de evitar que arranque solo a hacer cosas
+    stepperX -> forceStopAndNewPosition(0);
+    stepperY -> forceStopAndNewPosition(0);
+
     updatePrefs(Kp,"Kp");
     updatePrefs(Kd,"Kd");
     updatePrefs(Ki,"Ki");
@@ -1208,9 +1215,12 @@ result medir()
     updatePrefs(fuerzaInicial,"fuerzaInicial");
     updatePrefs(fuerzaFinal,"fuerzaFinal");
     updatePrefs(largo,"largo");
+    updatePrefs(loadingRate,"loadingRate");
+
+    float TOLmod = TOL;
 
     fuerzaSetpoint = -100 + fuerzaInicial * 1000;
-    float speed = maxSpeedX*fuerzaInicial/40;
+    float speed = maxSpeedX*fuerzaInicial/80;
     if (fuerzaInicial == 0) {
         speed = 800; // si fuerza inicial es cero no le gusta al set speed
     }
@@ -1254,7 +1264,7 @@ result medir()
         fuerzaInput = scale.get_units(numSamples); // newton
         if (fuerzaInput>50){ stepperY->forceStop();break;}
         unsigned long current_time = millis();
-        if (current_time - last_input_time > 50)
+        if (current_time - last_input_time > 20)
         {
             // monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
             error = fuerzaSetpoint - fuerzaInput;
@@ -1278,10 +1288,11 @@ result medir()
     }
 
 
+    // set el cero para que la punta quede 0.5mm arriba  de la muestra
     stepperY->setCurrentPosition(mm2step(0.5));
     x = 3;
     int n = 0;
-    TOL = 100 + (TOL*deltaF / 5);
+    TOLmod = 100 + (TOL*deltaF / 5);
 
     // ESTABILIZACION
 
@@ -1304,14 +1315,14 @@ result medir()
         // para ver que estamos en la fuerza inicial
         // if ((-TOL < error) && (error < TOL))
         if (fuerzaInput>fuerzaSetpoint*1.1){ stepperY->forceStop();break;}
-        if (error < TOL) // menos Tol porque quiero que corte TOL arriba del setpoint
+        if (error < TOLmod)
         {
             stepperY->forceStop();
             break;
         }
 
         unsigned long current_time = millis();
-        if (current_time - last_input_time > 50)
+        if (current_time - last_input_time > 20)
         {
             // fuerzaPID.Compute();
             // if (fuerzaOutput>0){
@@ -1378,7 +1389,7 @@ result medir()
         fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratio);
 
         unsigned long current_time = millis();
-        if (current_time - last_input_time > 50)
+        if (current_time - last_input_time > 20)
         {
             fuerzaInput = scale.get_units(numSamples); // newton
             fuerzaPID.Compute();
@@ -1429,8 +1440,7 @@ result medir()
     stepperX->setSpeedInHz(2*maxSpeedX);
     stepperY->setSpeedInHz(2*maxSpeedX);
 
-    stepperY->moveTo(0);
-    delay(20);
+    stepperY->moveTo(0, true); // blocking = true previene que el final de la raya este puntiagudo
     stepperX->moveTo(0);
     nav.refresh();
     fuerzaPID.SetMode(MANUAL);
@@ -1859,11 +1869,10 @@ void initPreferences()
     // init = false;
     if (init == false)
     {
-        prefs.putDouble("Kp", Kp);
-        prefs.putDouble("Ki", Ki);
-        prefs.putDouble("Kd", Kd);
         prefs.putFloat("CALI", CALIBRATION_FACTOR);
         prefs.putFloat("separacion", separacion);
+        prefs.putInt("loadingRate",loadingRate);
+
         prefs.putInt("fuerzaInicial", fuerzaInicial);
         prefs.putInt("fuerzaFinal", fuerzaFinal);
         prefs.putInt("velocidad", velocidad);
@@ -1876,11 +1885,12 @@ void initPreferences()
         prefs.putInt("MICROSTEP", MICROSTEP);
         prefs.putInt("buffer", buffer);
         prefs.putInt("TOL", TOL);
+
         prefs.putBool("init", true);
-        prefs.putFloat("CALI", CALIBRATION_FACTOR);
-        prefs.putDouble("eKp", eKp);
-        prefs.putDouble("eKi", eKi);
-        prefs.putDouble("eKd", eKd);
+
+        prefs.putDouble("Kp", Kp);
+        prefs.putDouble("Ki", Ki);
+        prefs.putDouble("Kd", Kd);
         prefs.putDouble("Kpmin", Kpmin);
         prefs.putDouble("Kpmax", Kpmax);
         prefs.putDouble("Kpinc", Kpinc);
@@ -1890,13 +1900,14 @@ void initPreferences()
     }
     else
     {
-        prefs.putInt("TOL", TOL);
-        prefs.putFloat("separacion", separacion);
         Kp = prefs.getDouble("Kp");
         Ki = prefs.getDouble("Ki");
         Kd = prefs.getDouble("Kd");
+
         CALIBRATION_FACTOR = prefs.getFloat("CALI");
         separacion = prefs.getFloat("separacion");
+        loadingRate = prefs.getInt("loadingRate");
+
         fuerzaInicial = prefs.getInt("fuerzaInicial");
         fuerzaFinal = prefs.getInt("fuerzaFinal");
         velocidad = prefs.getInt("velocidad");
@@ -1909,9 +1920,7 @@ void initPreferences()
         MICROSTEP = prefs.getInt("MICROSTEP");
         buffer = prefs.getInt("buffer");
         TOL = prefs.getInt("TOL");
-        eKp = prefs.getDouble("eKp");
-        eKi = prefs.getDouble("eKi");
-        eKd = prefs.getDouble("eKd");
+
         Kpmin = prefs.getDouble("Kpmin");
         Kpmax = prefs.getDouble("Kpmax");
         Kpinc = prefs.getDouble("Kpinc");
