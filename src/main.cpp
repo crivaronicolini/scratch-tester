@@ -316,6 +316,7 @@ result updateEEPROM()
 
 int ejeACalibrar = 1;
 int toggleDummy = 0;
+int constante = 0;
 int toggleDummyDespejar = 0;
 
 MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,(eventMask)(enterEvent|exitEvent), wrapStyle,
@@ -345,11 +346,11 @@ TOGGLE(toggleDummy, subMenuToggleCalibrarPID, "Calibrar PID", doNothing, noEvent
         VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
-        VALUE("", 1, medir, enterEvent),
+        VALUE("MIDIENDO", 1, medir, enterEvent),
         VALUE("", 0, doNothing, noEvent));
 
-TOGGLE(toggleDummy, subMenuToggleMedirCte, "Medir F cte", doNothing, noEvent, noStyle,
-        VALUE("", 1, medircte, enterEvent),
+TOGGLE(constante, subMenuToggleMedirCte, "Medir F cte", doNothing, noEvent, noStyle,
+        VALUE("MIDIENDO", 1, medir, enterEvent),
         VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(toggleDummy, subMenuToggleMapear, "Mapear", doNothing, noEvent, noStyle,
@@ -1389,7 +1390,8 @@ result medir()
         {
             break;
         }
-        ratio = stepperX->getCurrentPosition() / largoSteps;
+        ratio = constante ? 0 : stepperX->getCurrentPosition() / largoSteps;
+        // ratio = stepperX->getCurrentPosition() / largoSteps;
         fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratio);
 
         unsigned long current_time = millis();
@@ -1437,7 +1439,7 @@ result medir()
 
     }
     // monitorf("errAbsEstabilizacion= %d, errAbs= %d\n", errAbsEstabilizacion, errAbs);
-    if (not (stepperX->isRunning())) { toggleDummy = 0; }
+    if (not (stepperX->isRunning())) { constante = 0; }
     stepperX->forceStop();
     stepperY->forceStop();
 

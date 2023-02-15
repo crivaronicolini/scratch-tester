@@ -17,6 +17,10 @@ uploadfs:
 serial:
 	platformio device monitor -b 115200
 
+runserial:
+	platformio -f -c vim run --target upload
+	platformio device monitor -b 115200
+
 index:
 	make clean
 	bear -- make
