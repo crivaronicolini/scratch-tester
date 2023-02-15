@@ -980,7 +980,9 @@ result medircte()
     float TOLmod = TOL;
 
     fuerzaSetpoint = -100 + fuerzaInicial * 1000;
-    float speed = maxSpeedX*fuerzaInicial/40;
+    // paso a una vel de acercamiento prop a la raiz de la fuerza inicial.
+    // uso un parametro que lo deje igual a como era antes para 5N de fI
+    float speed = 2.2360*maxSpeedX*sqrt(fuerzaInicial)/80;
     if (fuerzaInicial == 0) {
         speed = 800; // si fuerza inicial es cero no le gusta al set speed
     }
@@ -1220,7 +1222,9 @@ result medir()
     float TOLmod = TOL;
 
     fuerzaSetpoint = -100 + fuerzaInicial * 1000;
-    float speed = maxSpeedX*fuerzaInicial/80;
+    // paso a una vel de acercamiento prop a la raiz de la fuerza inicial.
+    // uso un parametro que lo deje igual a como era antes para 5N de fI
+    float speed = 2.2360*maxSpeedX*sqrt(fuerzaInicial)/80;
     if (fuerzaInicial == 0) {
         speed = 800; // si fuerza inicial es cero no le gusta al set speed
     }
@@ -1230,7 +1234,7 @@ result medir()
     float ratio = 0;
     int deltaF = fuerzaFinal - fuerzaInicial;
     int deltaFM = fuerzaFinalM - fuerzaInicialM;
-    float largoSteps = mm2step(largo);
+    float largoSteps =  -mm2step(largo);
     double error = 0;
 
     // float norm = deltaF*largo*velocidad/(5*5*20); // normalizacion: el factor es 1 para los parametros de calibracion
