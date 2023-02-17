@@ -794,9 +794,9 @@ result medir()
         if (current_time - last_input_time > 20)
         {
             error = fuerzaSetpoint - fuerzaInput;
-            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
-                    fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
+                    fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
             #if GRAPH == 1
                 gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
                 float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
@@ -823,8 +823,8 @@ result medir()
 
     ////// ESTABILIZACION //////
 
-    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
-            0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     drawGraph(2);
     drawGraph(4);
     drawGraph(6);
@@ -851,9 +851,9 @@ result medir()
         {
             errAbs += abs(error)/10;
 
-            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
-                    fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
+                    fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
 
             #if GRAPH == 1
                 gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
@@ -920,7 +920,7 @@ result medir()
             errAbs += abs(error)/10;
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
-                    fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
+                    fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
 
             #if GRAPH == 1
                 gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
