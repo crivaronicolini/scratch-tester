@@ -116,6 +116,8 @@ int menuDelayTime = 100;
 
 // params medicion
 int fuerzaInicial = 0; // N
+int fuerzaInicialCte = 0; // N
+int fuerzaInicialDin = 0; // N
 int fuerzaFinal = 1;   // N
 int velocidad = 100;   // mm x minuto
 float largo = 5;         // mm
@@ -158,7 +160,7 @@ unsigned long lastStopTime = 0;
 // params botones
 int joySW_status = 1;
 bool activateEmergencyStop = false;
-int buffer = 200;
+int buffer = 50;
 int test = 44;
 
 // init graph
@@ -315,7 +317,7 @@ MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
 
 MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuToggleMedir),
-     FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
+     FIELD(fuerzaInicialDin, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
      altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 0, 0, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
@@ -323,7 +325,7 @@ MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
 
 MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuToggleMedirCte),
-     FIELD(fuerzaInicial, "Fuerza:", "N", 0, 200, 5, 1, doNothing, enterEvent, noStyle),
+     FIELD(fuerzaInicialCte, "Fuerza:", "N", 0, 200, 5, 1, doNothing, enterEvent, noStyle),
      altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 1, 5, doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
@@ -733,51 +735,53 @@ result medir()
     updatePrefs(Kd,"Kd");
     updatePrefs(Ki,"Ki");
     updatePrefs(velocidad,"velocidad");
-    updatePrefs(fuerzaInicial,"fuerzaInicial");
+    updatePrefs(fuerzaInicialDin,"fuerzaInicialDin");
+    updatePrefs(fuerzaInicialCte,"fuerzaInicialCte");
     updatePrefs(fuerzaFinal,"fuerzaFinal");
     updatePrefs(largo,"largo");
     updatePrefs(loadingRate,"loadingRate");
 
     float TOLmod = TOL;
 
+    // desacople las fuerzas iniciales de los menu con la de la medicion
+    // ahora tengo que ver cual es la que aplica a esta medicion
+    fuerzaInicial = constante ? fuerzaInicialCte : fuerzaInicialDin;
+
     fuerzaSetpoint = -100 + fuerzaInicial * 1000;
-    // paso a una vel de acercamiento prop a la raiz de la fuerza inicial.
+
+    // paso a una vel de acercamiento proporcional a la raiz de la fuerza inicial.
     // uso un parametro que lo deje igual a como era antes para 5N de fI
     float speed = 2.2360*maxSpeedX*sqrt(fuerzaInicial)/80;
     if (fuerzaInicial == 0) {
         speed = 800; // si fuerza inicial es cero no le gusta al set speed
     }
+    // valor en Newton
     int fuerzaFinalM = fuerzaFinal * 1000;
     int fuerzaInicialM = -100 + fuerzaInicial * 1000;
 
-    float ratio = 0;
     int deltaF = fuerzaFinal - fuerzaInicial;
     int deltaFM = fuerzaFinalM - fuerzaInicialM;
     float largoSteps =  -mm2step(largo);
+    float ratio = 0;
     double error = 0;
 
-    // float norm = deltaF*largo*velocidad/(5*5*20); // normalizacion: el factor es 1 para los parametros de calibracion
-    float norm = 1;
     int errAbs = 0;
+    int x = 3;
 
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
     fuerzaPID.SetSampleTime(50);
-    fuerzaPID.SetTunings(Kp*norm, Ki*norm, Kd*norm);
-    // fuerzaPID.SetTunings(eKp*norm, eKi*norm, eKd*norm);
+    fuerzaPID.SetTunings(Kp, Ki, Kd);
 
-    // ACERCAMIENTO
+    ////// ACERCAMIENTO //////
+
+    drawGraph(1);
+    drawGraph(6);
 
     stepperX->setCurrentPosition(0);
     stepperY->setSpeedInHz(speed);
     stepperY->setAcceleration(accelerationX * 10);
-    drawGraph(1);
-    drawGraph(6);
-    int x = 3;
-    // monitorln("===");
-    // monitorf("deltaF= %d, Kp= %f, Kpn= %f, Ki= %f, Kd= %f, fI= %d\n",deltaF,Kp,Kp*norm,Ki, Kd, fuerzaInicial);
-    // monitorf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", "t", "x", "error", "fOut", "fIn", "fSet", "y", "errAcc");
-
     stepperY->runForward();
+
     while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
@@ -789,9 +793,7 @@ result medir()
         unsigned long current_time = millis();
         if (current_time - last_input_time > 20)
         {
-            // monitorf("%d\t%d\t%f\t%f\n",current_time,stepperX->getCurrentPosition(), fuerzaInput, 0.0);
             error = fuerzaSetpoint - fuerzaInput;
-            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
@@ -806,6 +808,7 @@ result medir()
                     drawGraph(6);
                 }
             #endif
+
             last_input_time = current_time;
         }
     }
@@ -813,11 +816,12 @@ result medir()
 
     // set el cero para que la punta quede 0.5mm arriba  de la muestra
     stepperY->setCurrentPosition(mm2step(0.5));
+
     x = 3;
     int n = 0;
     TOLmod = 100 + (TOL*deltaF / 5);
 
-    // ESTABILIZACION
+    ////// ESTABILIZACION //////
 
     monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
             0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
@@ -827,18 +831,16 @@ result medir()
 
     stepperY->setSpeedInHz(speed/4);
     stepperY->runForward();
+
     while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
         {
             break;
         }
-        fuerzaInput = scale.get_units(numSamples); // newton
+        fuerzaInput = scale.get_units(numSamples);
         error = fuerzaSetpoint - fuerzaInput;
-        // para ver que estamos en la fuerza inicial
-        // if ((-TOL < error) && (error < TOL))
-        if (fuerzaInput>fuerzaSetpoint*1.1){ stepperY->forceStop();break;}
-        if (error < TOLmod)
+        if (error < TOLmod || fuerzaInput>fuerzaSetpoint*1.1)
         {
             stepperY->forceStop();
             break;
@@ -847,18 +849,8 @@ result medir()
         unsigned long current_time = millis();
         if (current_time - last_input_time > 20)
         {
-            // fuerzaPID.Compute();
-            // if (fuerzaOutput>0){
-            //     stepperY->setSpeedInHz(fuerzaOutput);
-            //     stepperY->runForward();
-            // } else if (fuerzaOutput<0){
-            //     stepperY->setSpeedInHz(-fuerzaOutput);
-            //     stepperY->runBackward();
-            // }
-            // else { stepperY->stopMove();}
             errAbs += abs(error)/10;
-            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
-            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
+
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
@@ -884,7 +876,6 @@ result medir()
 
         }
     }
-    // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
     monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
             0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
@@ -893,7 +884,8 @@ result medir()
     x = 3;
     n = 0;
 
-    // MEDICION
+    ////// MEDICION //////
+
     drawGraph(3);
     drawGraph(4);
     drawGraph(6);
@@ -909,7 +901,6 @@ result medir()
             break;
         }
         ratio = constante ? 0 : stepperX->getCurrentPosition() / largoSteps;
-        // ratio = stepperX->getCurrentPosition() / largoSteps;
         fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratio);
 
         unsigned long current_time = millis();
@@ -927,8 +918,6 @@ result medir()
             else { stepperY->stopMove();}
             error = fuerzaSetpoint - fuerzaInput;
             errAbs += abs(error)/10;
-            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\n",current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs);
-            // monitorf("%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t%d\t%d\t%f\t%f\t%f\t%f\t%d\t%d\t\n",
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, norm, Kp, Ki, Kd, largo, velocidad);
@@ -956,8 +945,7 @@ result medir()
         }
 
     }
-    // monitorf("errAbsEstabilizacion= %d, errAbs= %d\n", errAbsEstabilizacion, errAbs);
-    if (not (stepperX->isRunning())) { constante = 0; }
+    if (not (stepperX->isRunning())) { toggleDummy = 0; constante = 0; }
     stepperX->forceStop();
     stepperY->forceStop();
 
@@ -1228,7 +1216,7 @@ void drawGraph(int stage)
 result updateLargo()
 {
     // calcula el nuevo largo segun el loadingRate, y limpia el menu
-    largo = (float) (fuerzaFinal - fuerzaInicial) / loadingRate;
+    largo = (float) (fuerzaFinal - fuerzaInicialDin) / loadingRate;
     mainMenu[3].dirty = true;
     debugln("largo updated");
     return proceed;
@@ -1245,7 +1233,7 @@ void initPreferences()
         prefs.putFloat("separacion", separacion);
         prefs.putInt("loadingRate",loadingRate);
 
-        prefs.putInt("fuerzaInicial", fuerzaInicial);
+        prefs.putInt("fuerzaInicialDin", fuerzaInicialDin);
         prefs.putInt("fuerzaFinal", fuerzaFinal);
         prefs.putInt("velocidad", velocidad);
         prefs.putInt("largo", largo);
@@ -1272,6 +1260,8 @@ void initPreferences()
     }
     else
     {
+        prefs.putInt("fuerzaInicialDin", fuerzaInicialDin);
+        prefs.putInt("fuerzaInicialCte", fuerzaInicialCte);
         Kp = prefs.getDouble("Kp");
         Ki = prefs.getDouble("Ki");
         Kd = prefs.getDouble("Kd");
@@ -1280,7 +1270,8 @@ void initPreferences()
         separacion = prefs.getFloat("separacion");
         loadingRate = prefs.getInt("loadingRate");
 
-        fuerzaInicial = prefs.getInt("fuerzaInicial");
+        fuerzaInicialDin = prefs.getInt("fuerzaInicialDin");
+        fuerzaInicialCte = prefs.getInt("fuerzaInicialCte");
         fuerzaFinal = prefs.getInt("fuerzaFinal");
         velocidad = prefs.getInt("velocidad");
         largo = prefs.getInt("largo");
