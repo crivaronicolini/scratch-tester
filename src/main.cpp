@@ -324,7 +324,7 @@ MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,(eventMask)(
      FIELD(numSamples, "N muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
-TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar: ", doNothing, noEvent, noStyle,
+TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar:", doNothing, noEvent, noStyle,
        VALUE("X", 1, doNothing, noEvent),
        VALUE("Y", 2, doNothing, noEvent));
 
@@ -369,20 +369,35 @@ MENU(subMenuGridSearch, "Grid Search", doNothing, noEvent, wrapStyle,
 MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuToggleCalibrarPID),
      SUBMENU(subMenuGridSearch),
-     SUBMENU(subMenuToggleMedir),
      SUBMENU(subMenuToggleMapear),
-     altFIELD(decPlaces<3>::menuField, Kp, "Proporcional: ", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
-     altFIELD(decPlaces<3>::menuField, Ki, "Integrador: ", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
-     altFIELD(decPlaces<3>::menuField, Kd, "Derivador: ", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Kp, "Proporcional:", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Ki, "Integrador:", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Kd, "Derivador:", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
+     SUBMENU(subMenuCalibrarPID),
      SUBMENU(subMenuCalibrarCelda),
      SUBMENU(subMenuCalibrarMotores),
      FIELD(TOL, "Tolerancia", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
      FIELD(separacion, "Separacion", "", 0, 5, 1, 0.1, doNothing, noEvent, noStyle),
-     FIELD(loadingRate, "Loading rate N/mm", "", 0, 100, 5, 1, doNothing, noEvent, noStyle),
-     OP("Resetear configuracion", resetearConfig, enterEvent),
+     FIELD(loadingRate, "Tasa de carga", "N/mm", 0, 100, 5, 1, doNothing, noEvent, noStyle),
+     OP("Reseteo de fabrica", resetearConfig, enterEvent),
+     EXIT("<- Volver"));
+
+MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
+     SUBMENU(subMenuToggleMedir),
+     FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
+     FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
+     altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 0, 0, doNothing, noEvent, noStyle),
+     FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     EXIT("<- Volver"));
+
+MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
+     SUBMENU(subMenuToggleMedirCte),
+     FIELD(fuerzaInicial, "Fuerza:", "N", 0, 200, 5, 1, doNothing, enterEvent, noStyle),
+     altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 1, 5, doNothing, noEvent, noStyle),
+     FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 TOGGLE(toggleDummy, subMenuToggleDefinirOrigen,"Definir origen", doNothing, noEvent, noStyle,
@@ -395,14 +410,9 @@ TOGGLE(toggleDummyDespejar, subMenuToggleDespejar,"Despejar muestra", doNothing,
 
 MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuToggleDefinirOrigen),
-     FIELD(fuerzaInicial, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
-     FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
-     altFIELD(decPlaces<1>::menuField, largo, "Largo: ", "mm", 0, 20, 0, 0, doNothing, noEvent, noStyle),
-     FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
-     SUBMENU(subMenuToggleMedir),
-     SUBMENU(subMenuToggleMedirCte),
+     SUBMENU(subMenuMedir),
+     SUBMENU(subMenuMedirCte),
      SUBMENU(subMenuToggleDespejar),
-     SUBMENU(subMenuCalibrarPID),
      // OP("Homing", homing, enterEvent),
      SUBMENU(subMenuCalibrar));
 
