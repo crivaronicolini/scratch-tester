@@ -890,18 +890,23 @@ result medir()
     drawGraph(4);
     drawGraph(6);
 
+    int stepperXPos = 0;
+
     fuerzaPID.SetMode(AUTOMATIC);
     stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
     stepperX->move(largoSteps);
 
-    while (digitalRead(joySW) && stepperX->isRunning())
+    while (digitalRead(joySW))
     {
         if (emergencyStopCheck())
         {
             break;
         }
-        ratio = constante ? 0 : stepperX->getCurrentPosition() / largoSteps;
+        stepperXPos = stepperX->getCurrentPosition();
+        ratio = constante ? 0 : stepperXPos / largoSteps;
         fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratio);
+
+        if (stepperXPos >= largoSteps) {break;}
 
         unsigned long current_time = millis();
         if (current_time - last_input_time > 20)
@@ -918,8 +923,8 @@ result medir()
             else { stepperY->stopMove();}
             error = fuerzaSetpoint - fuerzaInput;
             errAbs += abs(error)/10;
-            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
-                    current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
+            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
+                    current_time, stepperXPos, error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
 
             #if GRAPH == 1
@@ -949,11 +954,16 @@ result medir()
     stepperX->forceStop();
     stepperY->forceStop();
 
+    // sacar la punta y volver al origen:
     stepperX->setSpeedInHz(2*maxSpeedX);
     stepperY->setSpeedInHz(2*maxSpeedX);
-
-    stepperY->moveTo(0, true); // blocking = true previene que el final de la raya este puntiagudo
+    // si la fuerza al final de la raya fue alta, retroceder la punta un poco para
+    // para que no salte al retirarla
+    if (fuerzaInput>10000) {stepperX->move(mm2step(0.1), true);}
+    // blocking = true previene que el final de la raya este puntiagudo
+    stepperY->moveTo(0, true);
     stepperX->moveTo(0);
+
     nav.refresh();
     fuerzaPID.SetMode(MANUAL);
     mainMenu.dirty = true;
