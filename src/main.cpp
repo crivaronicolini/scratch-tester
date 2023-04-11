@@ -163,9 +163,6 @@ bool activateEmergencyStop = false;
 int buffer = 50;
 int test = 44;
 
-// init graph
-float f, O, dy;
-
 PID fuerzaPID(&fuerzaInput, &fuerzaOutput, &fuerzaSetpoint, Kp, Ki, Kd, DIRECT);
 
 TMC2130Stepper driverX = TMC2130Stepper(CS_PINX, R_SENSE, SW_MOSI, SW_MISO, SW_SCK); // Software SPI
@@ -182,7 +179,6 @@ ClickEncoderStream encStream(clickEncoder, 1.5);
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
 TFT_eSPI gfx = TFT_eSPI();
 TFT_eFEX fex = TFT_eFEX(&gfx);
-void drawGraph(int stage);
 void updatePrefs(float value, const char* key);
 void updatePrefs(int value, const char* key);
 void updatePrefs(double value, const char* key);
@@ -207,7 +203,6 @@ void IRAM_ATTR emergencyStopActivate();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 #define DEBUG 0
-#define GRAPH 0
 #define MONITOR 1
 
 #if MONITOR == 1
@@ -551,10 +546,6 @@ result mapear()
     stepperY->setSpeedInHz(maxSpeedX*fuerzaInicial/20);
     stepperY->setAcceleration(accelerationX * 10);
 
-    drawGraph(1);
-    drawGraph(6);
-    int x = 3;
-
     float largoSteps = mm2step(largo);
 
     double altura = 0;
@@ -571,22 +562,6 @@ result mapear()
         altura = fuerzaInput;
         unsigned long current_time = millis();
         monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), step2mm(stepperX->getCurrentPosition()), step2mm(stepperY->getCurrentPosition()), altura);
-
-        #if GRAPH == 1
-            if (current_time - last_input_time > 50)
-            {
-                    gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
-                    float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
-                    gfx.drawPixel(x, i, TFT_YELLOW);
-                    x++;
-                    if (x==240) {
-                        x=3;
-                        drawGraph(6);
-                    }
-                    last_input_time = current_time;
-            }
-        #endif
-
     }
 
 
@@ -611,32 +586,9 @@ result mapear()
         unsigned long current_time = millis();
         monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), step2mm(stepperX->getCurrentPosition()), step2mm(stepperY->getCurrentPosition()), altura);
         m++;
-        #if GRAPH == 1
-            if (current_time - last_input_time > 50)
-            {
-                    gfx.drawFloat(altura/1000.0, 3, 50, 1, 1);
-                    float a = map(altura, -1000, 1000, 130, 18);
-                    gfx.drawPixel(x, a, TFT_GREEN);
-                    x++;
-                    if (x==240) {
-                        x=3;
-                        drawGraph(6);
-                    }
-                last_input_time = current_time;
-            }
-        #endif
-
     }
 
-
-    x = 3;
-    n = 0;
-
     // MEDICION
-    drawGraph(3);
-    drawGraph(4);
-    drawGraph(6);
-
     stepperX->setCurrentPosition(0);
     stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
     stepperX->move(largoSteps);
@@ -651,22 +603,6 @@ result mapear()
         altura = fuerzaInput - ceroCelda;
         unsigned long current_time = millis();
         monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), step2mm(stepperX->getCurrentPosition()), step2mm(stepperY->getCurrentPosition()), altura);
-        #if GRAPH == 1
-            if (current_time - last_input_time > 50)
-            {
-                gfx.drawFloat(altura/1000.0, 3, 50, 1, 1);
-
-                float a = map(altura, -1000, 1000, 130, 18);
-                gfx.drawPixel(x, a, TFT_GREEN);
-                x++;
-                if (x==240) {
-                    x=3;
-                    drawGraph(6);
-                }
-                last_input_time = current_time;
-            }
-        #endif
-
     }
 
     if (not (stepperX->isRunning())) { toggleDummy = 0; }
@@ -766,16 +702,12 @@ result medir()
     double error = 0;
 
     int errAbs = 0;
-    int x = 3;
 
     fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
     fuerzaPID.SetSampleTime(50);
     fuerzaPID.SetTunings(Kp, Ki, Kd);
 
     ////// ACERCAMIENTO //////
-
-    drawGraph(1);
-    drawGraph(6);
 
     stepperX->setCurrentPosition(0);
     stepperY->setSpeedInHz(speed);
@@ -797,18 +729,6 @@ result medir()
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
-            #if GRAPH == 1
-                gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
-                float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
-                gfx.drawPixel(x, i, TFT_YELLOW);
-                x++;
-
-                if (x==240) {
-                    x=3;
-                    drawGraph(6);
-                }
-            #endif
-
             last_input_time = current_time;
         }
     }
@@ -817,18 +737,12 @@ result medir()
     // set el cero para que la punta quede 0.5mm arriba  de la muestra
     stepperY->setCurrentPosition(mm2step(0.5));
 
-    x = 3;
-    int n = 0;
     TOLmod = 100 + (TOL*deltaF / 5);
 
     ////// ESTABILIZACION //////
 
     monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-    drawGraph(2);
-    drawGraph(4);
-    drawGraph(6);
-
     stepperY->setSpeedInHz(speed/4);
     stepperY->runForward();
 
@@ -854,24 +768,6 @@ result medir()
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
                     current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
-
-            #if GRAPH == 1
-                gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
-                gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
-
-                float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
-                float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinalM, 130, 18);
-                float o = map(fuerzaOutput, -100, 100, 130, 18);
-                gfx.drawPixel(x, i, TFT_YELLOW);
-                gfx.drawPixel(x, s, TFT_GREEN);
-                gfx.drawPixel(x, o, TFT_RED);
-                x++;
-                if (x==240) {
-                    x=3;
-                    drawGraph(6);
-                }
-            #endif
-
             last_input_time = current_time;
 
         }
@@ -881,14 +777,8 @@ result medir()
 
     int errAbsEstabilizacion = errAbs;
     errAbs =0;
-    x = 3;
-    n = 0;
 
     ////// MEDICION //////
-
-    drawGraph(3);
-    drawGraph(4);
-    drawGraph(6);
 
     int stepperXPos = 0;
 
@@ -926,26 +816,6 @@ result medir()
             monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
                     current_time, stepperXPos, error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
                     fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
-
-            #if GRAPH == 1
-                gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
-                gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
-                // gfx.drawFloat(fuerzaSetpoint, 3, 170, 30, 1);
-
-                float i = map(fuerzaInput, 0, 1.2*fuerzaFinalM, 130, 18);
-                float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinalM, 130, 18);
-                float o = map(fuerzaOutput, -100, 100, 130, 18);
-                float e = map(error, -1000, 1000, 130, 18);
-                gfx.drawPixel(x, s, TFT_GREEN);
-                gfx.drawPixel(x, i, TFT_YELLOW);
-                gfx.drawPixel(x, o, TFT_RED);
-                gfx.drawPixel(x, e, TFT_BLUE);
-                x++;
-                if (x==240) {
-                    x=3;
-                    drawGraph(6);
-                }
-            #endif
             last_input_time = current_time;
         }
 
@@ -1042,8 +912,6 @@ result calibrarPID()
     stepperY->setAcceleration(accelerationX * 10);
     stepperY->setCurrentPosition(0);
 
-    drawGraph(1);
-
     stepperY->runForward();
     while (digitalRead(joySW))
     {
@@ -1056,14 +924,8 @@ result calibrarPID()
         gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
     }
 
-    int x = 3;
-
     stepperY->setAcceleration(accelerationX*10);
     stepperY->applySpeedAcceleration();
-
-    drawGraph(2);
-    drawGraph(4);
-    drawGraph(6);
 
     while (digitalRead(joySW))
     {
@@ -1086,20 +948,6 @@ result calibrarPID()
             }
             else { stepperY->stopMove();}
             double error = fuerzaSetpoint - fuerzaInput;
-            gfx.drawFloat(fuerzaInput/1000.0, 3, 50, 1, 1);
-            gfx.drawFloat(fuerzaOutput, 0, 162, 1, 1);
-
-            float i = map(fuerzaInput, 0, 1.2*fuerzaFinal, 130, 18);
-            float s = map(fuerzaSetpoint,0, 1.2*fuerzaFinal, 130, 18);
-            float o = map(fuerzaOutput, -100, 100, 130, 18);
-            gfx.drawPixel(x, s, TFT_GREEN);
-            gfx.drawPixel(x, i, TFT_YELLOW);
-            gfx.drawPixel(x, o, TFT_RED);
-            x++;
-            if (x==240) {
-                x=3;
-                drawGraph(6);
-            }
             last_input_time = current_time;
         }
 
@@ -1158,69 +1006,6 @@ void initMotors()
 
     stepperX->setCurrentPosition(0);
     stepperY->setCurrentPosition(0);
-}
-
-void drawGraph(int stage)
-{
-#if GRAPH == 1
-    gfx.setTextPadding(80);
-
-    switch (stage)
-    {
-        case 1:
-            gfx.fillScreen(TFT_BLACK);
-            gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-            gfx.drawString("A", 1, 2, 1);
-            gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
-            gfx.drawString("I", 25, 2, 1);
-            gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-            break;
-        case 2:
-            gfx.fillScreen(TFT_BLACK);
-            gfx.setTextColor(TFT_BLUE, TFT_BLACK);
-            gfx.drawString("E", 1, 2, 1);
-            break;
-        case 3:
-            gfx.fillScreen(TFT_BLACK);
-            gfx.setTextColor(TFT_GREEN, TFT_BLACK);
-            gfx.drawString("M", 1, 2, 1);
-            break;
-        case 4:
-            gfx.setTextColor(TFT_YELLOW, TFT_BLACK);
-            gfx.drawString("I", 25, 2, 1);
-            // gfx.drawString("Error", 120, 70, 1);
-            gfx.setTextColor(TFT_RED, TFT_BLACK);
-            gfx.drawString("O", 140, 2, 1);
-            gfx.setTextColor(TFT_WHITE, TFT_BLACK);
-            // gfx.drawString("V", 120, 110, 1);
-            break;
-        case 5:
-            gfx.fillRect(0,20,240,135,TFT_BLACK);
-            f = map(fuerzaFinal, -1*fuerzaFinal, 3*fuerzaFinal, 130, 18);
-            O = map(0, -1*fuerzaFinal, 3*fuerzaFinal, 130, 18);
-            dy = f-O;
-            gfx.drawLine(0, f, 240, f, TFT_BLUE);
-            gfx.drawLine(0, O, 240, O, TFT_WHITE);
-            gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
-            gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
-            gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
-            break;
-        case 6: //para el medir, grafico completo
-            gfx.fillRect(0,20,240,135,TFT_BLACK);
-            f = map(fuerzaFinal, 0, 1.2*fuerzaFinal, 130, 18);
-            O = map(0, 0, 1.2*fuerzaFinal, 130, 18);
-            dy = f-O;
-            gfx.drawLine(0, f, 240, f, TFT_BLUE);
-            gfx.drawLine(0, O, 240, O, TFT_WHITE);
-            // gfx.drawLine(0, O+2*dy, 240, O+2*dy, TFT_DARKGREY);
-            // gfx.drawLine(0, O+3*dy, 240, O+3*dy, TFT_DARKGREY);
-            // gfx.drawLine(0, O-dy, 240, O-dy, TFT_DARKGREY);
-            gfx.drawLine(0, map(0, -100, 100, 130, 18),
-                         0, map(0, -100, 100, 130, 18), TFT_BROWN);
-            break;
-
-    }
-#endif
 }
 
 result updateLargo()
