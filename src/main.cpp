@@ -708,6 +708,9 @@ result medir()
     fuerzaPID.SetSampleTime(50);
     fuerzaPID.SetTunings(Kp, Ki, Kd);
 
+    monitorf("\"fuerzaInicial\"=%f,\"fuerzaFinal\"=%f,\"kP\"=%d,\"kI\"=%d,\"kD\"=%d,\"largo\"=%f,\"velocidad\"=%d\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
+    monitor("t,x,y,fIn,fSet,fOut,errAbs");
+
     ////// ACERCAMIENTO //////
 
     stepperX->setCurrentPosition(0);
@@ -726,10 +729,7 @@ result medir()
         unsigned long current_time = millis();
         if (current_time - last_input_time > 20)
         {
-            error = fuerzaSetpoint - fuerzaInput;
-            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
-                    current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
-                    fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
+            monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
             last_input_time = current_time;
         }
     }
@@ -742,8 +742,7 @@ result medir()
 
     ////// ESTABILIZACION //////
 
-    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    monitorf("%d,%d,%d,%f,%f,%f,%f\n",0,0,0,0,0,0,0);
     stepperY->setSpeedInHz(speed/4);
     stepperY->runForward();
 
@@ -766,15 +765,12 @@ result medir()
         {
             errAbs += abs(error)/10;
 
-            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
-                    current_time,stepperX->getCurrentPosition(), error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
-                    fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
+            monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
             last_input_time = current_time;
 
         }
     }
-    monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d,%d\n",
-            0,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    monitorf("%d,%d,%d,%f,%f,%f,%f\n",0,0,0,0,0,0,0);
 
     int errAbsEstabilizacion = errAbs;
     errAbs =0;
@@ -814,9 +810,7 @@ result medir()
             else { stepperY->stopMove();}
             error = fuerzaSetpoint - fuerzaInput;
             errAbs += abs(error)/10;
-            monitorf("%d,%d,%f,%f,%f,%f,%d,%d,%d,%d,%f,%f,%f,%f,%d\n",
-                    current_time, stepperXPos, error, fuerzaOutput, fuerzaInput, fuerzaSetpoint, stepperY->getCurrentPosition(), errAbs,
-                    fuerzaInicial, deltaF, Kp, Ki, Kd, largo, velocidad);
+            monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
             last_input_time = current_time;
         }
 
