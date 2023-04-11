@@ -708,6 +708,8 @@ result medir()
     fuerzaPID.SetSampleTime(50);
     fuerzaPID.SetTunings(Kp, Ki, Kd);
 
+    unsigned long current_time = millis();
+
     monitorf("\"fuerzaInicial\"=%f,\"fuerzaFinal\"=%f,\"kP\"=%d,\"kI\"=%d,\"kD\"=%d,\"largo\"=%f,\"velocidad\"=%d\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
     monitor("t,x,y,fIn,fSet,fOut,errAbs");
 
@@ -726,7 +728,7 @@ result medir()
         }
         fuerzaInput = scale.get_units(numSamples); // newton
         if (fuerzaInput>50){ stepperY->forceStop();break;}
-        unsigned long current_time = millis();
+        current_time = millis();
         if (current_time - last_input_time > 20)
         {
             monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
@@ -760,7 +762,7 @@ result medir()
             break;
         }
 
-        unsigned long current_time = millis();
+        current_time = millis();
         if (current_time - last_input_time > 20)
         {
             errAbs += abs(error)/10;
@@ -795,7 +797,7 @@ result medir()
 
         if (stepperXPos >= largoSteps) {break;}
 
-        unsigned long current_time = millis();
+        current_time = millis();
         if (current_time - last_input_time > 20)
         {
             fuerzaInput = scale.get_units(numSamples); // newton
