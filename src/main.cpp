@@ -115,11 +115,11 @@ int chooseField = 1;
 int menuDelayTime = 100;
 
 // params medicion
-int fuerzaInicial = 0; // N
-int fuerzaInicialCte = 0; // N
-int fuerzaInicialDin = 0; // N
-int fuerzaFinal = 1;   // N
-int velocidad = 100;   // mm x minuto
+int fuerzaInicial = 5; // N
+int fuerzaInicialCte = 5; // N
+int fuerzaInicialDin = 5; // N
+int fuerzaFinal = 55;   // N
+int velocidad = 5;   // mm x minuto
 float largo = 5;         // mm
 int loadingRate = 10;   // N/mm
 float separacion = 0.2;
@@ -244,7 +244,7 @@ int constante = 0;
 int toggleDummyDespejar = 0;
 
 MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,(eventMask)(enterEvent|exitEvent), wrapStyle,
-     FIELD(reading, "F:","N",-1,100000,0,0,doNothing, noEvent, noStyle),
+     FIELD(reading, "F:","mN",-1,100000,0,0,doNothing, noEvent, noStyle),
      FIELD(CALIBRATION_FACTOR, "F calibracion:", "", 1, 200, 10, 1, doNothing, noEvent, noStyle),
      FIELD(numSamples, "N muestras:","",1,100,1,0,doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
@@ -292,9 +292,10 @@ MENU(subMenuGridSearch, "Grid Search", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuToggleCalibrarPID),
-     SUBMENU(subMenuGridSearch),
-     SUBMENU(subMenuToggleMapear),
+     // SUBMENU(subMenuToggleCalibrarPID),
+     // SUBMENU(subMenuGridSearch),
+     // SUBMENU(subMenuToggleMapear),
+     SUBMENU(subMenuToggleMedir),
      altFIELD(decPlaces<3>::menuField, Kp, "Proporcional:", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
      altFIELD(decPlaces<3>::menuField, Ki, "Integrador:", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
      altFIELD(decPlaces<3>::menuField, Kd, "Derivador:", "", -5, 5, 0.01, 0.001, doNothing, noEvent, noStyle),
