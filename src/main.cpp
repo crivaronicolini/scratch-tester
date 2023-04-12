@@ -713,8 +713,9 @@ result medir()
 
     unsigned long current_time = millis();
 
-    monitorf("{\"fuerzaInicial\"=%d,\"fuerzaFinal\"=%d,\"kP\"=%f,\"kI\"=%f,\"kD\"=%f,\"largo\"=%f,\"velocidad\"=%d}\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
-    monitor("t,x,y,fIn,fSet,fOut,errAbs\n");
+    debugln("fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad");
+    monitorf("%d,%d,%f,%f,%f,%f,%d\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
+    debugln("t, x, y, fIn, fSet, fOut, errAbs");
 
     ////// ACERCAMIENTO //////
 
