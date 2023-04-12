@@ -449,17 +449,21 @@ result definirOrigen()
     {
         suma += analogRead(joyX);
     }
-    float bufferMaxX = (suma / cantidad) + buffer;
-    float bufferMinX = (suma / cantidad) - buffer;
+    float centroX = (suma / cantidad);
+    float bufferMaxX = centroX + buffer;
+    float bufferMinX = centroX - buffer;
     suma = 0;
     for (int i = 0; i < cantidad; i++)
     {
         suma += analogRead(joyY);
     }
-    float bufferMaxY = (suma / cantidad) + buffer;
-    float bufferMinY = (suma / cantidad) - buffer;
+    float centroY = (suma / cantidad);
+    float bufferMaxY = centroY + buffer;
+    float bufferMinY = centroY - buffer;
+    debugf("centroX: %f\n", centroX);
     debugf("buffer maxX: %f\n", bufferMaxX);
     debugf("buffer minX: %f\n", bufferMinX);
+    debugf("centroY: %f\n", centroY);
     debugf("buffer maxY: %f\n", bufferMaxY);
     debugf("buffer minY: %f\n", bufferMinY);
     stepperX->setAcceleration(accelerationJog);
@@ -483,7 +487,7 @@ result definirOrigen()
             // Based on the input, set targets and max speed
             stepperX->setSpeedInHz(abs(desired_speedX));
             stepperY->setSpeedInHz(abs(desired_speedY));
-            debugf("X %d; Y %d\n", joyX_value, joyY_value);
+            debugf("X %.0f; Y %.0f\n", joyX_value-centroX, joyY_value-centroY);
 
             if (not(joyX_value > bufferMinX && bufferMaxX > joyX_value))
             {
