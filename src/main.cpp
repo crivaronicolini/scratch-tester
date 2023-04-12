@@ -316,7 +316,7 @@ MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
      FIELD(fuerzaInicialDin, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo, enterEvent, noStyle),
      altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 0, 0, doNothing, noEvent, noStyle),
-     FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(velocidad, "Velocidad:", "mm/min", 0, 200, 10, 1, doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
 MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
@@ -710,7 +710,7 @@ result medir()
 
     unsigned long current_time = millis();
 
-    monitorf("\"fuerzaInicial\"=%f,\"fuerzaFinal\"=%f,\"kP\"=%d,\"kI\"=%d,\"kD\"=%d,\"largo\"=%f,\"velocidad\"=%d\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
+    monitorf("{\"fuerzaInicial\"=%f,\"fuerzaFinal\"=%f,\"kP\"=%d,\"kI\"=%d,\"kD\"=%d,\"largo\"=%f,\"velocidad\"=%d}\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
     monitor("t,x,y,fIn,fSet,fOut,errAbs");
 
     ////// ACERCAMIENTO //////
@@ -774,8 +774,7 @@ result medir()
     }
     monitorf("%d,%d,%d,%f,%f,%f,%f\n",0,0,0,0,0,0,0);
 
-    int errAbsEstabilizacion = errAbs;
-    errAbs =0;
+    errAbs = 0;
 
     ////// MEDICION //////
 
@@ -817,9 +816,11 @@ result medir()
         }
 
     }
-    if (not (stepperX->isRunning())) { toggleDummy = 0; constante = 0; }
     stepperX->forceStop();
     stepperY->forceStop();
+
+    toggleDummy = 0;
+    constante = 0;
 
     // sacar la punta y volver al origen:
     stepperX->setSpeedInHz(2*maxSpeedX);
