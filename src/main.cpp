@@ -202,7 +202,7 @@ void emergencyStop();
 void IRAM_ATTR emergencyStopActivate();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
-#define DEBUG 0
+#define DEBUG 1
 #define MONITOR 1
 
 #if MONITOR == 1
@@ -270,7 +270,7 @@ TOGGLE(toggleDummy, subMenuToggleCalibrarPID, "Calibrar PID", doNothing, noEvent
         VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
-        VALUE("MIDIENDO", 1, medir, enterEvent),
+        VALUE(" MIDIENDO", 1, medir, enterEvent),
         VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(constante, subMenuToggleMedirCte, "Medir F cte", doNothing, noEvent, noStyle,
@@ -351,7 +351,8 @@ TFT_eSPIOut eSpiOut(gfx, colors, eSpiTops, pList, fontW, fontH + 1);
 idx_t serialTops[MAX_DEPTH] = {0};
 serialOut outSerial(Serial, serialTops);
 #if DEBUG == 1
-    menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
+    // menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
+    menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
 #else
     menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
 #endif
@@ -619,8 +620,6 @@ result mapear()
     stepperY->moveTo(0);
     delay(20);
     stepperX->moveTo(0);
-    nav.refresh();
-    mainMenu.dirty = true;
     return proceed;
 }
 
@@ -667,6 +666,7 @@ result gridSearch()
 
 result medir()
 {
+    nav.doOutput();
     // reset el queue de los motores, trato de evitar que arranque solo a hacer cosas
     stepperX -> forceStopAndNewPosition(0);
     stepperY -> forceStopAndNewPosition(0);
@@ -832,9 +832,7 @@ result medir()
     stepperY->moveTo(0, true);
     stepperX->moveTo(0);
 
-    nav.refresh();
     fuerzaPID.SetMode(MANUAL);
-    mainMenu.dirty = true;
     return proceed;
 }
 
@@ -861,7 +859,6 @@ result homing()
         // stepperX.runSpeed();
     }
     // stepperX.setCurrentPosition(0);
-    mainMenu.dirty = true;
     return proceed;
 }
 
@@ -889,7 +886,6 @@ result calibrarMotores()
         delay(1000);
         debugln("loop 2");
     }
-    mainMenu.dirty = true;
     return proceed;
 }
 
@@ -953,8 +949,6 @@ result calibrarPID()
     stepperY->forceStop();
     stepperY->setSpeedInHz(maxSpeedX);
     stepperY->moveTo(0);
-    nav.refresh();
-    mainMenu.dirty = true;
     return proceed;
 }
 
