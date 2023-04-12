@@ -565,9 +565,6 @@ result mapear()
         monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), step2mm(stepperX->getCurrentPosition()), step2mm(stepperY->getCurrentPosition()), altura);
     }
 
-
-    x = 3;
-    int n = 0;
     int m = 0;
 
     // ESTABILIZACION
@@ -672,8 +669,8 @@ result medir()
     updatePrefs(Kd,"Kd");
     updatePrefs(Ki,"Ki");
     updatePrefs(velocidad,"velocidad");
-    updatePrefs(fuerzaInicialDin,"fuerzaInicialDin");
-    updatePrefs(fuerzaInicialCte,"fuerzaInicialCte");
+    updatePrefs(fuerzaInicialDin,"fInicialDin");
+    updatePrefs(fuerzaInicialCte,"fInicialCte");
     updatePrefs(fuerzaFinal,"fuerzaFinal");
     updatePrefs(largo,"largo");
     updatePrefs(loadingRate,"loadingRate");
@@ -710,8 +707,8 @@ result medir()
 
     unsigned long current_time = millis();
 
-    monitorf("{\"fuerzaInicial\"=%f,\"fuerzaFinal\"=%f,\"kP\"=%d,\"kI\"=%d,\"kD\"=%d,\"largo\"=%f,\"velocidad\"=%d}\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
-    monitor("t,x,y,fIn,fSet,fOut,errAbs");
+    monitorf("{\"fuerzaInicial\"=%d,\"fuerzaFinal\"=%d,\"kP\"=%f,\"kI\"=%f,\"kD\"=%f,\"largo\"=%f,\"velocidad\"=%d}\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
+    monitor("t,x,y,fIn,fSet,fOut,errAbs\n");
 
     ////// ACERCAMIENTO //////
 
@@ -744,7 +741,7 @@ result medir()
 
     ////// ESTABILIZACION //////
 
-    monitorf("%d,%d,%d,%f,%f,%f,%f\n",0,0,0,0,0,0,0);
+    monitorln("0,0,0,0,0,0,0");
     stepperY->setSpeedInHz(speed/4);
     stepperY->runForward();
 
@@ -767,12 +764,12 @@ result medir()
         {
             errAbs += abs(error)/10;
 
-            monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
+            monitorf("%d,%d,%d,%f,%f,%f,%d\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
             last_input_time = current_time;
 
         }
     }
-    monitorf("%d,%d,%d,%f,%f,%f,%f\n",0,0,0,0,0,0,0);
+    monitorln("1,1,1,1,1,1,1");
 
     errAbs = 0;
 
@@ -793,8 +790,8 @@ result medir()
         stepperXPos = stepperX->getCurrentPosition();
         ratio = constante ? 0 : stepperXPos / largoSteps;
         fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratio);
-
-        if (stepperXPos >= largoSteps) {break;}
+        // los signos menos es porque el movimiento es hacia -x
+        if (- stepperXPos >= - largoSteps) {break;}
 
         current_time = millis();
         if (current_time - last_input_time > 20)
@@ -811,7 +808,7 @@ result medir()
             else { stepperY->stopMove();}
             error = fuerzaSetpoint - fuerzaInput;
             errAbs += abs(error)/10;
-            monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
+            monitorf("%d,%d,%d,%f,%f,%f,%d\n", current_time, stepperXPos, stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
             last_input_time = current_time;
         }
 
@@ -819,8 +816,7 @@ result medir()
     stepperX->forceStop();
     stepperY->forceStop();
 
-    toggleDummy = 0;
-    constante = 0;
+    if (not (stepperX->isRunning())) { toggleDummy = 0; constante = 0; }
 
     // sacar la punta y volver al origen:
     stepperX->setSpeedInHz(2*maxSpeedX);
@@ -1026,7 +1022,7 @@ void initPreferences()
         prefs.putFloat("separacion", separacion);
         prefs.putInt("loadingRate",loadingRate);
 
-        prefs.putInt("fuerzaInicialDin", fuerzaInicialDin);
+        prefs.putInt("fInicialDin", fuerzaInicialDin);
         prefs.putInt("fuerzaFinal", fuerzaFinal);
         prefs.putInt("velocidad", velocidad);
         prefs.putInt("largo", largo);
@@ -1053,8 +1049,8 @@ void initPreferences()
     }
     else
     {
-        prefs.putInt("fuerzaInicialDin", fuerzaInicialDin);
-        prefs.putInt("fuerzaInicialCte", fuerzaInicialCte);
+        prefs.putInt("fInicialDin", fuerzaInicialDin);
+        prefs.putInt("fInicialCte", fuerzaInicialCte);
         Kp = prefs.getDouble("Kp");
         Ki = prefs.getDouble("Ki");
         Kd = prefs.getDouble("Kd");
@@ -1063,8 +1059,8 @@ void initPreferences()
         separacion = prefs.getFloat("separacion");
         loadingRate = prefs.getInt("loadingRate");
 
-        fuerzaInicialDin = prefs.getInt("fuerzaInicialDin");
-        fuerzaInicialCte = prefs.getInt("fuerzaInicialCte");
+        fuerzaInicialDin = prefs.getInt("fInicialDin");
+        fuerzaInicialCte = prefs.getInt("fInicialCte");
         fuerzaFinal = prefs.getInt("fuerzaFinal");
         velocidad = prefs.getInt("velocidad");
         largo = prefs.getInt("largo");
@@ -1088,19 +1084,19 @@ void initPreferences()
 
 void updatePrefs(int value, const char* key)
 {
-    debugf("guardando %s:%d", key, value);
+    debugf("guardando %s:%d\n", key, value);
     prefs.putInt(key,value);
 }
 
 void updatePrefs(double value, const char* key)
 {
-    debugf("guardando %s:%d", key, value);
+    debugf("guardando %s:%f\n", key, value);
     prefs.putDouble(key,value);
 }
 
 void updatePrefs(float value, const char* key)
 {
-    debugf("guardando %s:%d", key, value);
+    debugf("guardando %s:%f\n", key, value);
     prefs.putFloat(key,value);
 }
 
