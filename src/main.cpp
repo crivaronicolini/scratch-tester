@@ -159,7 +159,7 @@ unsigned long lastStopTime = 0;
 
 // params botones
 int joySW_status = 1;
-bool activateEmergencyStop = false;
+bool emergencyStopIsActive = false;
 int buffer = 50;
 int test = 44;
 
@@ -415,6 +415,8 @@ void setup()
         debugln("\nHX711 not found.");
     }
     fuerzaPID.SetMode(0);
+    updateLargo();
+    emergencyStopIsActive = false;
 }
 
 void loop()
@@ -721,16 +723,12 @@ result medir()
     {
         if (emergencyStopCheck())
         {
-            break;
+            debugln("emergencyStop en Acercamiento");
+            return proceed;
         }
         fuerzaInput = scale.get_units(numSamples); // newton
         if (fuerzaInput>50){ stepperY->forceStop();break;}
-        current_time = millis();
-        if (current_time - last_input_time > 20)
-        {
-            monitorf("%d,%d,%d,%f,%f,%f,%f\n", current_time, stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
-            last_input_time = current_time;
-        }
+        monitorf("%d,%d,%d,%f,%f,%f,%d\n", millis(), stepperX->getCurrentPosition(), stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
     }
 
 
@@ -749,7 +747,8 @@ result medir()
     {
         if (emergencyStopCheck())
         {
-            break;
+            debugln("emergencyStop en Estabilizacion");
+            return proceed;
         }
         fuerzaInput = scale.get_units(numSamples);
         error = fuerzaSetpoint - fuerzaInput;
@@ -785,7 +784,8 @@ result medir()
     {
         if (emergencyStopCheck())
         {
-            break;
+            debugln("emergencyStop en Medicion");
+            return proceed;
         }
         stepperXPos = stepperX->getCurrentPosition();
         ratio = constante ? 0 : stepperXPos / largoSteps;
@@ -1118,15 +1118,18 @@ void IRAM_ATTR emergencyStopActivate()
 
     if (now - lastStopTime > 100)
     {
-        activateEmergencyStop = true;
+        debugln("emergencyStop Activated");
+        emergencyStopIsActive = true;
         lastStopTime = now;
     }
 }
 
 bool emergencyStopCheck()
 {
-    if (activateEmergencyStop)
+    if (emergencyStopIsActive)
     {
+        debugln("emergencyStopIsActive (if true):");
+        debugln(emergencyStopIsActive);
         emergencyStop();
         return true;
     }
@@ -1138,17 +1141,20 @@ bool emergencyStopCheck()
 
 void emergencyStop()
 {
-    int speedX = stepperX->getSpeedInMilliHz();
-    stepperX->setAcceleration(accelerationX * 10);
-    stepperX->applySpeedAcceleration();
-    stepperY->stopMove();
-    int speedY = stepperY->getSpeedInMilliHz();
-    stepperY->setAcceleration(accelerationX * 10);
-    stepperY->applySpeedAcceleration();
-    stepperY->stopMove();
+    debugln("emergency Stop init");
+    int speedX = stepperX->getCurrentSpeedInMilliHz();
+    int speedY = stepperY->getCurrentSpeedInMilliHz();
+    stepperY->forceStop();
+    stepperX->forceStop();
 
+    debugf("Speed X= %d\n", speedX);
+    debugf("Speed Y= %d\n", speedY);
     stepperY->setAcceleration(accelerationX);
-    if (speedX < 0)
+    if (speedX == 0)
+    {
+        debugln("X speed cero");
+    }
+    else if (speedX < 0)
     {
         stepperX->move(mm2step(5));
     }
@@ -1157,7 +1163,11 @@ void emergencyStop()
         stepperX->move(mm2step(-5));
     }
 
-    if (speedY < 0)
+    if (speedY == 0)
+    {
+        debugln("Y speed cero");
+    }
+    else if (speedY < 0)
     {
         stepperY->move(mm2step(5));
     }
@@ -1165,7 +1175,7 @@ void emergencyStop()
     {
         stepperY->move(mm2step(-5));
     }
-    activateEmergencyStop = false;
+    emergencyStopIsActive = false;
 }
 
 result resetearConfig()
