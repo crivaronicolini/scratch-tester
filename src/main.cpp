@@ -67,14 +67,14 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 // Declare pins for rotary encoder
 #define encB 36 // dt
 #define encA 39 // clk
-#define encBtn 2
+#define encBtn 32
 // steps per detent
 #define encSteps 4
 
 // Declare pins for joystick
-#define joyY 35
-#define joyX 32
-#define joySW 2
+#define joyY 34
+#define joyX 35
+#define joySW 32
 
 #define stopSW 0
 
@@ -121,8 +121,9 @@ int fuerzaInicialDin = 5; // N
 int fuerzaFinal = 55;   // N
 int velocidad = 5;   // mm x minuto
 float largo = 5;         // mm
+int direccionRayado = -1; // negativo=hacia la derecha
 int loadingRate = 10;   // N/mm
-float separacion = 0.2;
+float separacion = 0.5;
 
 // params PID
 double fuerzaSetpoint, fuerzaInput, fuerzaOutput;
@@ -189,7 +190,6 @@ result despejar();
 result medir();
 result mapear();
 result definirOrigen();
-result homing();
 result calibrarMotores();
 result calibrarPID();
 result gridSearch();
@@ -339,7 +339,6 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuMedir),
      SUBMENU(subMenuMedirCte),
      SUBMENU(subMenuToggleDespejar),
-     // OP("Homing", homing, enterEvent),
      SUBMENU(subMenuCalibrar));
 
 const panel panels[] MEMMODE = {{0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}}; // Main menu panel
@@ -351,8 +350,8 @@ TFT_eSPIOut eSpiOut(gfx, colors, eSpiTops, pList, fontW, fontH + 1);
 idx_t serialTops[MAX_DEPTH] = {0};
 serialOut outSerial(Serial, serialTops);
 #if DEBUG == 1
-    // menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
-    menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
+    menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};  // list of output devices
+    // menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
 #else
     menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
 #endif
@@ -442,7 +441,7 @@ void loop()
 
 result definirOrigen()
 {
-    // samplea 10 veces y toma el promedio para ver el cero del joystick
+    // samplea `cantidad` de veces y toma el promedio para ver el cero del joystick
     nav.poll(); // para que aparezca el ON en el menu
     int suma = 0;
     int cantidad = 50;
@@ -472,11 +471,6 @@ result definirOrigen()
 
     while (digitalRead(joySW))
     {
-        // Every INPUT_READ_INTERVAL milliseconds, read inputs.
-        // We do this infrequently to prevent interfering
-        // with the stepper motor high speed stepping
-        // Get the current joystick position as analog value
-
         unsigned long current_time = millis();
         if (current_time - last_input_time > INPUT_READ_INTERVAL)
         {
@@ -534,7 +528,7 @@ result definirOrigen()
 }
 
 result despejar()
-{ //nueve los ejes una distancia prudente para sacar la muestra
+{ //mueve los ejes una distancia prudente para sacar la muestra
     nav.poll();
     stepperY->setSpeedInHz(maxSpeedJog);
     stepperY->setAcceleration(accelerationJog);
@@ -668,8 +662,8 @@ result medir()
 {
     nav.doOutput();
     // reset el queue de los motores, trato de evitar que arranque solo a hacer cosas
-    stepperX -> forceStopAndNewPosition(0);
-    stepperY -> forceStopAndNewPosition(0);
+    // stepperX -> forceStopAndNewPosition(0);
+    // stepperY -> forceStopAndNewPosition(0);
 
     updatePrefs(Kp,"Kp");
     updatePrefs(Kd,"Kd");
@@ -701,7 +695,7 @@ result medir()
 
     int deltaF = fuerzaFinal - fuerzaInicial;
     int deltaFM = fuerzaFinalM - fuerzaInicialM;
-    float largoSteps =  -mm2step(largo);
+    float largoSteps =  direccionRayado * mm2step(largo);
     float ratio = 0;
     double error = 0;
 
@@ -713,11 +707,17 @@ result medir()
 
     unsigned long current_time = millis();
 
-    debugln("fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad");
-    monitorf("%d,%d,%f,%f,%f,%f,%d\n", fuerzaInicial, fuerzaFinal, Kp, Ki, Kd, largo, velocidad);
-    debugln("t, x, y, fIn, fSet, fOut, errAbs");
-
     ////// ACERCAMIENTO //////
+
+    // anuncio las etapas: 0 = Acercamiento, 1 = Estabilizacion, 2 = Acercamiento
+    monitorln("0,0,0,0,0,0,0");
+
+    // la primera linea tiene los parámetros de la medicion
+    debugln("fuerzaInicial, fuerzaFinal, largo, velocidad, Kp, Ki, Kd");
+    monitorf("%d,%d,%f,%d,%f,%f,%f\n", fuerzaInicial, fuerzaFinal, largo, velocidad, Kp, Ki, Kd);
+
+    // luego siguen el siguiente orden
+    debugln("t, x, y, fIn, fSet, fOut, errAbs");
 
     stepperX->setCurrentPosition(0);
     stepperY->setSpeedInHz(speed);
@@ -738,13 +738,13 @@ result medir()
 
 
     // set el cero para que la punta quede 0.5mm arriba  de la muestra
-    stepperY->setCurrentPosition(mm2step(0.5));
+    stepperY->setCurrentPosition(mm2step(separacion));
 
     TOLmod = 100 + (TOL*deltaF / 5);
 
     ////// ESTABILIZACION //////
 
-    monitorln("0,0,0,0,0,0,0");
+    monitorln("1,1,1,1,1,1,1");
     stepperY->setSpeedInHz(speed/4);
     stepperY->runForward();
 
@@ -773,14 +773,14 @@ result medir()
 
         }
     }
-    monitorln("1,1,1,1,1,1,1");
 
     errAbs = 0;
 
     ////// MEDICION //////
 
-    int stepperXPos = 0;
+    monitorln("2,2,2,2,2,2,2");
 
+    int stepperXPos = 0;
     fuerzaPID.SetMode(AUTOMATIC);
     stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
     stepperX->move(largoSteps);
@@ -816,8 +816,8 @@ result medir()
             monitorf("%d,%d,%d,%f,%f,%f,%d\n", current_time, stepperXPos, stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
             last_input_time = current_time;
         }
-
     }
+
     stepperX->forceStop();
     stepperY->forceStop();
 
@@ -837,31 +837,6 @@ result medir()
     return proceed;
 }
 
-
-result homing()
-{
-    // stepperX.setSpeed(maxSpeedX / 2.0);
-    // stepperX.move(-mm2step(300));
-    while (digitalRead(stopSW))
-    {
-        if (emergencyStopCheck())
-        {
-            return proceed;
-        }
-        // stepperX.runSpeed();
-    }
-    // stepperX.move(mm2step(300));
-    while (!digitalRead(stopSW))
-    {
-        if (emergencyStopCheck())
-        {
-            return proceed;
-        }
-        // stepperX.runSpeed();
-    }
-    // stepperX.setCurrentPosition(0);
-    return proceed;
-}
 
 result calibrarMotores()
 {
