@@ -382,23 +382,23 @@ MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuMedirCte), SUBMENU(subMenuToggleDespejar),
      SUBMENU(subMenuCalibrar));
 
-const panel panels[] MEMMODE = {
-    {0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}}; // Main menu panel
-navNode *nodes[sizeof(panels) /
-               sizeof(panel)]; // navNodes to store navigation status
-panelsList pList(panels, nodes,
-                 sizeof(panels) / sizeof(panel)); // a list of panels and nodes
+// Main menu panel
+const panel panels[] MEMMODE = {{0, 0, GFX_WIDTH / fontW, GFX_HEIGHT / fontH}};
+// navNodes to store navigation status
+navNode *nodes[sizeof(panels) / sizeof(panel)];
+// a list of panels and nodes
+panelsList pList(panels, nodes, sizeof(panels) / sizeof(panel));
 // idx_t tops[MAX_DEPTH]={0,0}; // store cursor positions for each level
 idx_t eSpiTops[MAX_DEPTH] = {0};
 TFT_eSPIOut eSpiOut(gfx, colors, eSpiTops, pList, fontW, fontH + 1);
 idx_t serialTops[MAX_DEPTH] = {0};
 serialOut outSerial(Serial, serialTops);
 #if DEBUG == 1
-menuOut *constMEM outputs[] MEMMODE = {&outSerial,
-                                       &eSpiOut}; // list of output devices
-// menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};  // list of output devices
+// list of output devices
+menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};
+// menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};
 #else
-menuOut *constMEM outputs[] MEMMODE = {&eSpiOut}; // list of output devices
+menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};
 #endif
 outputsList out(outputs, sizeof(outputs) / sizeof(menuOut *)); // outputs list
 serialIn serial(Serial);
@@ -473,9 +473,6 @@ void loop() {
     }
     lastMenuFrame = millis();
     nav.poll();
-    // monitorf("$%f,%d",1.0);
-    // monitorf("%f,%d\n",9.0, 3);
-    // Serial.println(9);
   }
 }
 
