@@ -29,44 +29,38 @@ HX711 scale;
 using namespace Menu;
 
 // define menu colors --------------------------------------------------------
-#define Black RGB565(0, 0, 0)
-#define Red RGB565(255, 0, 0)
-#define Green RGB565(0, 255, 0)
-#define Blue RGB565(0, 0, 255)
-#define Gray RGB565(128, 128, 128)
-#define LighterRed RGB565(255, 60, 92)    // colores OP-1
-#define LighterGreen RGB565(6, 236, 150)  //
-#define LighterBlue RGB565(111, 132, 225) //
-#define LighterGray RGB565(211, 211, 211)
-#define DarkerRed RGB565(150, 0, 0)
-#define DarkerGreen RGB565(0, 150, 0)
-#define DarkerBlue RGB565(0, 0, 150)
-#define Cyan RGB565(0, 255, 255)
-#define Magenta RGB565(255, 0, 255)
-#define Yellow RGB565(255, 255, 0)
-#define White RGB565(255, 255, 255)
-#define DarkerOrange RGB565(255, 140, 0)
+#define Black (uint16_t) RGB565(0, 0, 0)
+#define Red (uint16_t) RGB565(255, 0, 0)
+#define Green (uint16_t) RGB565(0, 255, 0)
+#define Blue (uint16_t) RGB565(0, 0, 255)
+#define Gray (uint16_t) RGB565(128, 128, 128)
+#define LighterRed (uint16_t) RGB565(255, 60, 92)    // colores OP-1
+#define LighterGreen (uint16_t) RGB565(6, 236, 150)  //
+#define LighterBlue (uint16_t) RGB565(111, 132, 225) //
+#define LighterGray (uint16_t) RGB565(211, 211, 211)
+#define DarkerRed (uint16_t) RGB565(150, 0, 0)
+#define DarkerGreen (uint16_t) RGB565(0, 150, 0)
+#define DarkerBlue (uint16_t) RGB565(0, 0, 150)
+#define Cyan (uint16_t) RGB565(0, 255, 255)
+#define Magenta (uint16_t) RGB565(255, 0, 255)
+#define Yellow (uint16_t) RGB565(255, 255, 0)
+#define White (uint16_t) RGB565(255, 255, 255)
+#define DarkerOrange (uint16_t) RGB565(255, 140, 0)
 
 // TFT color table
 const colorDef<uint16_t> colors[6] MEMMODE = {
     //{{disabled normal,disabled selected},{enabled normal,enabled selected,
     // enabled editing}}
-    {{(uint16_t)Black, (uint16_t)Black},
-     {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}}, // bgColor
-    {{(uint16_t)White, (uint16_t)White},
-     {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // fgColor
-    {{(uint16_t)Red, (uint16_t)Red},
-     {(uint16_t)Yellow, (uint16_t)Yellow, (uint16_t)Yellow}}, // valColor
-    {{(uint16_t)White, (uint16_t)White},
-     {(uint16_t)White, (uint16_t)White, (uint16_t)White}}, // unitColor
-    {{(uint16_t)White, (uint16_t)Gray},
-     {(uint16_t)Black, (uint16_t)Red, (uint16_t)White}}, // cursorColor
-    {{(uint16_t)White, (uint16_t)Yellow},
-     {(uint16_t)Black, (uint16_t)Red, (uint16_t)Red}}, // titleColor
+    {{Black, Black}, {Black, Red, Red}},     // bgColor
+    {{White, White}, {White, White, White}}, // fgColor
+    {{Red, Red}, {Yellow, Yellow, Yellow}},  // valColor
+    {{White, White}, {White, White, White}}, // unitColor
+    {{White, Gray}, {Black, Red, White}},    // cursorColor
+    {{White, Yellow}, {Black, Red, Red}},    // titleColor
 };
 
 // Define the width and height of the TFT and how much of it to take up
-#define GFX_WIDTH 480
+#define GFX_WIDTH 240
 #define GFX_HEIGHT 135
 #define fontW 12
 #define fontH 15
@@ -79,8 +73,8 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define encSteps 4
 
 // Declare pins for joystick
-#define joyY 34
-#define joyX 35
+#define joyY 35
+#define joyX 34
 #define joySW 32
 
 #define stopSW 0
@@ -129,9 +123,11 @@ int fuerzaInicialDin = 5; // N
 int fuerzaFinal = 55;     // N
 int velocidad = 5;        // mm x minuto
 float largo = 5;          // mm
-int direccionRayado = -1; // negativo=hacia la derecha
+int direccionRayado = 1;  // negativo=hacia la derecha
 int loadingRate = 10;     // N/mm
 float separacion = 0.5;
+
+bool medicionCompletada = false;
 
 // params PID
 double fuerzaSetpoint, fuerzaInput, fuerzaOutput;
@@ -150,26 +146,30 @@ double Kpmin = 0, Kpmax = 0, Kpinc = 0, Kimin = 0, Kimax = 0, Kiinc = 0;
 // int maxSpeedX = 25000;
 int MICROSTEP = 256;
 // int maxSpeedX = 10000;
-float mm2step(float mm) { return mm * MICROSTEP * 100; }
-float step2mm(float step) { return step / (MICROSTEP * 100); }
-float mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
+int mm2step(float mm) { return mm * MICROSTEP * 100; }
+float step2mm(int step) { return step / (MICROSTEP * 100); }
+int mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
 float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
+
+int distPuntaFoco = -1898515;
+int distPanorama = 14648;
 
 int maxSpeedX = mmxm2stepxs(100);
 int accelerationX = 4 * maxSpeedX;
-int maxSpeedJog = 2 * maxSpeedX;
+int maxSpeedJog = 4 * maxSpeedX;
 int accelerationJog = 4 * maxSpeedJog;
 
 // params tiempo
 int INPUT_READ_INTERVAL = 100;
 unsigned long last_input_time = 0;
+unsigned long last_redraw = 0;
 unsigned long lastButtonPress = 0;
 unsigned long lastStopTime = 0;
 
 // params botones
 int joySW_status = 1;
 bool emergencyStopIsActive = false;
-int buffer = 50;
+int buffer = 150;
 int test = 44;
 
 PID fuerzaPID(&fuerzaInput, &fuerzaOutput, &fuerzaSetpoint, Kp, Ki, Kd, DIRECT);
@@ -182,10 +182,8 @@ TMC2130Stepper driverY =
 FastAccelStepperEngine engine = FastAccelStepperEngine();
 FastAccelStepper *stepperX = NULL;
 FastAccelStepper *stepperY = NULL;
-// Declare the clickencoder
-// Disable doubleclicks in setup makes the response faster.  See:
-// https://github.com/soligen2010/encoder/issues/6
-ClickEncoder clickEncoder = ClickEncoder(encB, encA, encBtn, encSteps);
+
+ClickEncoder clickEncoder = ClickEncoder(encA, encB, encBtn, encSteps);
 ClickEncoderStream encStream(clickEncoder, 1.5);
 
 // TFT gfx is what the ArduinoMenu TFT_eSPIOut.h is expecting
@@ -200,10 +198,14 @@ result resetearConfig();
 result despejar();
 result medir();
 result mapear();
-result definirOrigen();
+void moverMuestra();
+result moverMuestraMenu();
 result calibrarMotores();
 result calibrarPID();
 result gridSearch();
+result calibrarMicroscopio();
+result siguienteFoto();
+result anteriorFoto();
 long leerCelda();
 result toggleCalibracionCelda();
 void initPreferences();
@@ -253,17 +255,38 @@ void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 // Start ArduinoMenu
 //////////////////////////////////////////////////////////
 
+result medirYMicroscopio() {
+  medir();
+  // stepperX->setSpeedInHz(maxSpeedJog);
+  // stepperX->move(-abs(distPuntaFoco));
+  return proceed;
+}
+
+result volverAOrigen() {
+  stepperX->stopMove();
+  stepperX->setSpeedInHz(maxSpeedJog);
+  stepperX->moveTo(0);
+  // nav.doNav(navCmd(escCmd));
+  return proceed;
+}
+
 result updateEEPROM() {
   // writeEEPROM();
   return quit;
 }
 
-#define MAX_DEPTH 3
+#define MAX_DEPTH 5
 
 int ejeACalibrar = 1;
 int toggleDummy = 0;
 int constante = 0;
 int toggleDummyDespejar = 0;
+int toggleDummyCalibrarMicro = 0;
+
+TOGGLE(toggleDummyCalibrarMicro, subMenuCalibrarMicroscopio,
+       "Microscopio:", doNothing, noEvent, noStyle,   //
+       VALUE("", 1, calibrarMicroscopio, enterEvent), //
+       VALUE("", 0, doNothing, noEvent));
 
 MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,
      (eventMask)(enterEvent | exitEvent), wrapStyle,
@@ -275,7 +298,8 @@ MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,
      EXIT("<- Volver"));
 
 TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar:", doNothing,
-       noEvent, noStyle, VALUE("X", 1, doNothing, noEvent),
+       noEvent, noStyle,                  //
+       VALUE("X", 1, doNothing, noEvent), //
        VALUE("Y", 2, doNothing, noEvent));
 
 MENU(subMenuCalibrarMotores, "Motores", doNothing, noEvent, wrapStyle,
@@ -290,20 +314,28 @@ MENU(subMenuCalibrarMotores, "Motores", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 TOGGLE(toggleDummy, subMenuToggleGridSearch, "Grid Search", doNothing, noEvent,
-       noStyle, VALUE("", 1, gridSearch, enterEvent),
+       noStyle,                              //
+       VALUE("", 1, gridSearch, enterEvent), //
        VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(toggleDummy, subMenuToggleCalibrarPID, "Calibrar PID", doNothing,
-       noEvent, noStyle, VALUE("", 1, calibrarPID, enterEvent),
+       noEvent, noStyle,                      //
+       VALUE("", 1, calibrarPID, enterEvent), //
        VALUE("", 0, doNothing, noEvent));
 
-TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
-       VALUE(" MIDIENDO", 1, medir, enterEvent),
-       VALUE("", 0, doNothing, noEvent));
+MENU(subMenuMidiendoyFotos, "Medir", medirYMicroscopio, enterEvent,
+     wrapStyle,                                     //
+     OP("Siguiente", siguienteFoto, enterEvent),    //
+     OP("Anterior", anteriorFoto, enterEvent),      //
+     OP("Ir al origen", volverAOrigen, enterEvent), //
+     EXIT("<- Volver"));
 
-TOGGLE(constante, subMenuToggleMedirCte, "Medir F cte", doNothing, noEvent,
-       noStyle, VALUE("MIDIENDO", 1, medir, enterEvent),
-       VALUE("", 0, doNothing, noEvent));
+MENU(subMenuMidiendoyFotosCte, "Medir F cte", medirYMicroscopio, enterEvent,
+     wrapStyle,                                         //
+     OP("Siguiente", siguienteFoto, enterEvent),        //
+     OP("Anterior", anteriorFoto, enterEvent),          //
+     OP("Volver al origen", volverAOrigen, enterEvent), //
+     EXIT("<- Volver"));
 
 TOGGLE(toggleDummy, subMenuToggleMapear, "Mapear", doNothing, noEvent, noStyle,
        VALUE("", 1, mapear, enterEvent), VALUE("", 0, doNothing, noEvent));
@@ -324,31 +356,8 @@ MENU(subMenuGridSearch, "Grid Search", doNothing, noEvent, wrapStyle,
               doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
-MENU(subMenuCalibrarPID, "Calibracion de PID", doNothing, noEvent, wrapStyle,
-     // SUBMENU(subMenuToggleCalibrarPID),
-     // SUBMENU(subMenuGridSearch),
-     // SUBMENU(subMenuToggleMapear),
-     SUBMENU(subMenuToggleMedir),
-     altFIELD(decPlaces<3>::menuField, Kp, "Proporcional:", "", -5, 5, 0.01,
-              0.001, doNothing, noEvent, noStyle),
-     altFIELD(decPlaces<3>::menuField, Ki, "Integrador:", "", -5, 5, 0.01,
-              0.001, doNothing, noEvent, noStyle),
-     altFIELD(decPlaces<3>::menuField, Kd, "Derivador:", "", -5, 5, 0.01, 0.001,
-              doNothing, noEvent, noStyle),
-     EXIT("<- Volver"));
-
-MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuCalibrarPID), SUBMENU(subMenuCalibrarCelda),
-     SUBMENU(subMenuCalibrarMotores),
-     FIELD(TOL, "Tolerancia", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
-     FIELD(separacion, "Separacion", "", 0, 5, 1, 0.1, doNothing, noEvent,
-           noStyle),
-     FIELD(loadingRate, "Tasa de carga", "N/mm", 0, 100, 5, 1, doNothing,
-           noEvent, noStyle),
-     OP("Reseteo de fabrica", resetearConfig, enterEvent), EXIT("<- Volver"));
-
 MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuToggleMedir),
+     SUBMENU(subMenuMidiendoyFotos),
      FIELD(fuerzaInicialDin, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo,
            enterEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo,
@@ -360,7 +369,7 @@ MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuToggleMedirCte),
+     SUBMENU(subMenuMidiendoyFotosCte),
      FIELD(fuerzaInicialCte, "Fuerza:", "N", 0, 200, 5, 1, doNothing,
            enterEvent, noStyle),
      altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 1, 5,
@@ -369,17 +378,48 @@ MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
            noStyle),
      EXIT("<- Volver"));
 
+MENU(subMenuCalibrarPID, "PID", doNothing, noEvent, wrapStyle,
+     // SUBMENU(subMenuToggleCalibrarPID),
+     // SUBMENU(subMenuGridSearch),
+     // SUBMENU(subMenuToggleMapear),
+     // SUBMENU(subMenuToggleMedir),
+     SUBMENU(subMenuMedir), //
+     altFIELD(decPlaces<3>::menuField, Kp, "Proporcional:", "", -5, 5, 0.01,
+              0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Ki, "Integrador:", "", -5, 5, 0.01,
+              0.001, doNothing, noEvent, noStyle),
+     altFIELD(decPlaces<3>::menuField, Kd, "Derivador:", "", -5, 5, 0.01, 0.001,
+              doNothing, noEvent, noStyle),
+     EXIT("<- Volver"));
+
+MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
+     SUBMENU(subMenuCalibrarPID),         //
+     SUBMENU(subMenuCalibrarCelda),       //
+     SUBMENU(subMenuCalibrarMotores),     //
+     SUBMENU(subMenuCalibrarMicroscopio), //
+     FIELD(TOL, "Tolerancia", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
+     FIELD(separacion, "Separacion", "", 0, 5, 1, 0.1, doNothing, noEvent,
+           noStyle),
+     FIELD(loadingRate, "Tasa de carga", "N/mm", 0, 100, 5, 1, doNothing,
+           noEvent, noStyle),
+     OP("Reseteo de fabrica", resetearConfig, enterEvent), //
+     EXIT("<- Volver"));
+
 TOGGLE(toggleDummy, subMenuToggleDefinirOrigen, "Definir origen", doNothing,
-       noEvent, noStyle, VALUE(" ON", 1, definirOrigen, enterEvent),
+       noEvent, noStyle, //
+       VALUE(" ON", 1, moverMuestraMenu, enterEvent),
        VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(toggleDummyDespejar, subMenuToggleDespejar, "Despejar muestra",
-       doNothing, noEvent, noStyle, VALUE(" ON", 1, despejar, enterEvent),
+       doNothing, noEvent, noStyle,           //
+       VALUE(" ON", 1, despejar, enterEvent), //
        VALUE("", 0, doNothing, noEvent));
 
-MENU(mainMenu, "SCRATCH TESTER 3000", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuToggleDefinirOrigen), SUBMENU(subMenuMedir),
-     SUBMENU(subMenuMedirCte), SUBMENU(subMenuToggleDespejar),
+MENU(mainMenu, "SCRATCHTESTER3000", doNothing, noEvent, wrapStyle,
+     SUBMENU(subMenuToggleDefinirOrigen), //
+     SUBMENU(subMenuMedir),               //
+     SUBMENU(subMenuMedirCte),            //
+     SUBMENU(subMenuToggleDespejar),      //
      SUBMENU(subMenuCalibrar));
 
 // Main menu panel
@@ -400,20 +440,44 @@ menuOut *constMEM outputs[] MEMMODE = {&outSerial, &eSpiOut};
 #else
 menuOut *constMEM outputs[] MEMMODE = {&eSpiOut};
 #endif
-outputsList out(outputs, sizeof(outputs) / sizeof(menuOut *)); // outputs list
+outputsList out(outputs,
+                sizeof(outputs) / sizeof(menuOut *)); // outputs list
 serialIn serial(Serial);
 MENU_INPUTS(in, &encStream, &serial); // &encButton,
 NAVROOT(nav, mainMenu, MAX_DEPTH, in, out);
 
 // ESP32 timer thanks to:
 // http://www.iotsharing.com/2017/06/how-to-use-interrupt-timer-in-arduino-esp32.html
-// and: https://techtutorialsx.com/2017/10/07/esp32-arduino-timer-interrupts/
+// and:
+// https://techtutorialsx.com/2017/10/07/esp32-arduino-timer-interrupts/
 hw_timer_t *timer = NULL;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 //////////////////////////////////////////////////////////
 // End Arduino Menu
 //////////////////////////////////////////////////////////
+
+void alertError(String msg) {
+  gfx.fillScreen(Black);
+  gfx.setTextColor(DarkerRed);
+  gfx.setCursor(80, 60);
+  gfx.println(msg);
+
+  gfx.setCursor(200, 110);
+  gfx.setTextColor(White, LighterRed);
+  gfx.drawRightString("OK", GFX_WIDTH - 10, GFX_HEIGHT - 20, 1);
+  while (digitalRead((joySW))) {
+    delay(100);
+  }
+  nav.refresh();
+}
+
+void alertMsg(String msg) {
+  gfx.fillScreen(Black);
+  gfx.setTextColor(LighterBlue);
+  gfx.setCursor(80, 60);
+  gfx.println(msg);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -432,8 +496,6 @@ void setup() {
   gfx.init();
   gfx.setRotation(1);
   debugln("Initialized display");
-  // gfx.fillScreen(TFT_BLACK);
-  gfx.fillScreen(TFT_WHITE);
   gfx.setTextFont(1);
   gfx.setTextSize(2);
 
@@ -445,7 +507,7 @@ void setup() {
 
   pinMode(encBtn, INPUT_PULLUP);
   pinMode(stopSW, INPUT_PULLUP);
-  attachInterrupt(stopSW, emergencyStopActivate, RISING);
+  // attachInterrupt(stopSW, emergencyStopActivate, RISING);
 
   scale.begin(load, SCK);
   if (scale.wait_ready_retry(3, 500)) {
@@ -455,10 +517,13 @@ void setup() {
     debugln("Tare done...");
   } else {
     debugln("\nHX711 not found.");
+    alertMsg("Celda de carga desconectada\nConectar y reiniciar");
   }
   fuerzaPID.SetMode(0);
   updateLargo();
   emergencyStopIsActive = false;
+  debugf("dist punta foco %d\n", distPuntaFoco);
+  debugf("dist punta foco %d\n", distPanorama);
 }
 
 void loop() {
@@ -476,10 +541,10 @@ void loop() {
   }
 }
 
-result definirOrigen() {
-  // samplea `cantidad` de veces y toma el promedio para ver el cero del
-  // joystick
-  nav.poll(); // para que aparezca el ON en el menu
+void moverMuestra() {
+  //  samplea `cantidad` de veces y toma el promedio para ver el cero del
+  //  joystick
+  // nav.poll(); // para que aparezca el ON en el menu
   int suma = 0;
   int cantidad = 50;
   for (int i = 0; i < cantidad; i++) {
@@ -509,10 +574,10 @@ result definirOrigen() {
     if (current_time - last_input_time > INPUT_READ_INTERVAL) {
       int joyX_value = analogRead(joyX);
       int joyY_value = analogRead(joyY);
-      int desired_speedX = map(joyX_value, 0, 4095, -maxSpeedJog, maxSpeedJog);
+      // los menos son para que den bien las direcciones
+      int desired_speedX = -map(joyX_value, 0, 4095, -maxSpeedJog, maxSpeedJog);
       int desired_speedY = -map(joyY_value, 0, 4095, -maxSpeedJog, maxSpeedJog);
 
-      // Based on the input, set targets and max speed
       stepperX->setSpeedInHz(abs(desired_speedX));
       stepperY->setSpeedInHz(abs(desired_speedY));
       debugf("X %.0f; Y %.0f\n", joyX_value - centroX, joyY_value - centroY);
@@ -547,11 +612,17 @@ result definirOrigen() {
   }
   stepperY->stopMove();
   stepperX->stopMove();
+}
+
+result moverMuestraMenu() {
+  nav.doOutput();
+  moverMuestra();
+  nav.refresh();
   return proceed;
 }
 
-result
-despejar() { // mueve los ejes una distancia prudente para sacar la muestra
+result despejar() {
+  // mueve los ejes una distancia prudente para sacar la muestra
   nav.poll();
   stepperY->setSpeedInHz(maxSpeedJog);
   stepperY->setAcceleration(accelerationJog);
@@ -682,10 +753,38 @@ result gridSearch() {
   return proceed;
 }
 
+#define CENTERX 120
+#define CENTERY 62
+
+void progressBar(char step, float ratio) {
+  switch (step) {
+  case 'a':
+    gfx.drawRoundRect(20, 65, 200, 22, 1, Gray);
+    break;
+  case 'e':
+    gfx.drawRoundRect(20, 65, 200, 22, 1, LighterBlue);
+    break;
+  case 's':
+    gfx.drawRoundRect(20, 65, 200, 22, 1, White);
+    break;
+  case 'm':
+    gfx.fillRect(21, 66, ratio * 199, 19, White);
+    break;
+  }
+}
+
 result medir() {
-  nav.doOutput();
-  // reset el queue de los motores, trato de evitar que arranque solo a hacer
-  // cosas stepperX -> forceStopAndNewPosition(0); stepperY ->
+  // nav.doOutput();
+  gfx.fillScreen(Black);
+  gfx.setTextColor(LighterBlue);
+  gfx.drawCentreString("MIDIENDO", CENTERX, 15, 1);
+  progressBar('a', .0);
+  gfx.setTextColor(Gray);
+  gfx.setTextSize(1);
+  gfx.drawRightString("CANCELAR", GFX_WIDTH - 10, GFX_HEIGHT - 20, 1);
+  gfx.setTextSize(2);
+  // reset el queue de los motores, trato de evitar que arranque solo a
+  // hacer cosas stepperX -> forceStopAndNewPosition(0); stepperY ->
   // forceStopAndNewPosition(0);
 
   updatePrefs(Kp, "Kp");
@@ -706,8 +805,9 @@ result medir() {
 
   fuerzaSetpoint = -100 + fuerzaInicial * 1000;
 
-  // paso a una vel de acercamiento proporcional a la raiz de la fuerza inicial.
-  // uso un parametro que lo deje igual a como era antes para 5N de fI
+  // paso a una vel de acercamiento proporcional a la raiz de la fuerza
+  // inicial. uso un parametro que lo deje igual a como era antes para 5N
+  // de fI
   float speed = 2.2360 * maxSpeedX * sqrt(fuerzaInicial) / 80;
   if (fuerzaInicial == 0) {
     speed = 800; // si fuerza inicial es cero no le gusta al set speed
@@ -719,7 +819,8 @@ result medir() {
   int deltaF = fuerzaFinal - fuerzaInicial;
   int deltaFM = fuerzaFinalM - fuerzaInicialM;
   float largoSteps = direccionRayado * mm2step(largo);
-  float ratio = 0;
+  float ratio = 0.;
+  float ratioOpt = 0.;
   double error = 0;
 
   int errAbs = 0;
@@ -732,9 +833,7 @@ result medir() {
 
   ////// ACERCAMIENTO //////
 
-  // anuncio las etapas: 0 = Acercamiento, 1 = Estabilizacion, 2 = Acercamiento
-  monitorln("0,0,0,0,0,0,0");
-
+  fuerzaPID.SetMode(MANUAL);
   // la primera linea tiene los parámetros de la medicion
   debugln("fuerzaInicial, fuerzaFinal, largo, velocidad, Kp, Ki, Kd");
   monitorf("%d,%d,%f,%d,%f,%f,%f\n", fuerzaInicial, fuerzaFinal, largo,
@@ -749,10 +848,10 @@ result medir() {
   stepperY->runForward();
 
   while (digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      debugln("emergencyStop en Acercamiento");
-      return proceed;
-    }
+    // if (emergencyStopCheck()) {
+    //   debugln("emergencyStop en Acercamiento");
+    //   return proceed;
+    // }
     fuerzaInput = scale.get_units(numSamples); // newton
     if (fuerzaInput > 50) {
       stepperY->forceStop();
@@ -770,18 +869,22 @@ result medir() {
 
   ////// ESTABILIZACION //////
 
-  monitorln("1,1,1,1,1,1,1");
+  // anuncio las etapas: 0 = Estabilizacion, 1 = Acercamiento
+  monitorln("0,0,0,0,0,0,0");
+  progressBar('e', .0);
+
   stepperY->setSpeedInHz(speed / 4);
   stepperY->runForward();
 
   while (digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      debugln("emergencyStop en Estabilizacion");
-      return proceed;
-    }
+    // if (emergencyStopCheck()) {
+    //   debugln("emergencyStop en Estabilizacion");
+    //   return proceed;
+    // }
     fuerzaInput = scale.get_units(numSamples);
     error = fuerzaSetpoint - fuerzaInput;
-    if (error < TOLmod || fuerzaInput > fuerzaSetpoint * 1.1) {
+    // if (error < TOLmod || fuerzaInput > fuerzaSetpoint * 1.1) {
+    if (fuerzaInput > fuerzaSetpoint * 1.1) {
       stepperY->forceStop();
       break;
     }
@@ -801,45 +904,51 @@ result medir() {
 
   ////// MEDICION //////
 
-  monitorln("2,2,2,2,2,2,2");
+  monitorln("1,1,1,1,1,1,1");
 
+  progressBar('s', .0);
   int stepperXPos = 0;
   fuerzaPID.SetMode(AUTOMATIC);
   stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
   stepperX->move(largoSteps);
 
-  while (digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      debugln("emergencyStop en Medicion");
-      return proceed;
-    }
+  while ((digitalRead(joySW)) and (stepperX->isRunning())) {
     stepperXPos = stepperX->getCurrentPosition();
-    ratio = constante ? 0 : stepperXPos / largoSteps;
-    fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratio);
-    // los signos menos es porque el movimiento es hacia -x
-    if (-stepperXPos >= -largoSteps) {
-      break;
-    }
+    ratio = stepperXPos / largoSteps;
+    ratioOpt = constante ? 0 : ratio;
+    fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratioOpt);
 
     current_time = millis();
     if (current_time - last_input_time > 20) {
       fuerzaInput = scale.get_units(numSamples); // newton
       fuerzaPID.Compute();
       if (fuerzaOutput > 0) {
-        stepperY->setSpeedInHz(fuerzaOutput);
+        stepperY->setSpeedInHz((uint32_t)fuerzaOutput);
         stepperY->runForward();
       } else if (fuerzaOutput < 0) {
-        stepperY->setSpeedInHz(-fuerzaOutput);
+        stepperY->setSpeedInHz((uint32_t)-fuerzaOutput);
         stepperY->runBackward();
       } else {
         stepperY->stopMove();
       }
       error = fuerzaSetpoint - fuerzaInput;
-      errAbs += abs(error) / 10;
+      // debugln(abs(error / fuerzaSetpoint));
+      // if (abs(error / fuerzaSetpoint) > 0.45) {
+      //   debugln("fuerza lejos del setpoint");
+      //   //          --------------------
+      //   alertError("Fuerza lejos"
+      //              "del setpoint");
+      //   break;
+      // };
+      errAbs += abs(error) / 10.;
       monitorf("%d,%d,%d,%f,%f,%f,%d\n", current_time, stepperXPos,
                stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint,
                fuerzaOutput, errAbs);
       last_input_time = current_time;
+    }
+    if (current_time - last_redraw > 40) {
+      progressBar('m', ratio);
+      last_redraw = current_time;
     }
   }
 
@@ -854,8 +963,8 @@ result medir() {
   // sacar la punta y volver al origen:
   stepperX->setSpeedInHz(2 * maxSpeedX);
   stepperY->setSpeedInHz(2 * maxSpeedX);
-  // si la fuerza al final de la raya fue alta, retroceder la punta un poco para
-  // para que no salte al retirarla
+  // si la fuerza al final de la raya fue alta, retroceder la punta un poco
+  // para para que no salte al retirarla
   if (fuerzaInput > 10000) {
     stepperX->move(mm2step(0.1), true);
   }
@@ -864,6 +973,115 @@ result medir() {
   stepperX->moveTo(0);
 
   fuerzaPID.SetMode(MANUAL);
+  fuerzaOutput = 0.;
+  medicionCompletada = true;
+  return proceed;
+}
+
+result siguienteFoto() {
+  // int currentX = stepperX->getCurrentPosition();
+  // float largoSteps = mm2step(largo);
+  // if (abs(currentX - distPuntaFoco) > largoSteps) {
+  //   nav.doNav(navCmd(escCmd));
+  //   return proceed;
+  // }
+  debugln("sig foto");
+  stepperX->move(-distPanorama);
+  return proceed;
+}
+
+result anteriorFoto() {
+  // int currentX = stepperX->getCurrentPosition();
+  // float largoSteps = mm2step(largo);
+  // if (abs(currentX - distPuntaFoco) > largoSteps) {
+  //   return proceed;
+  // }
+  debugln("ant foto");
+  stepperX->move(distPanorama);
+  return proceed;
+}
+
+result calibrarMicroscopio() {
+  // despues de hacer una raya, da direcciones para mover la muestra hasta
+  // que se vea en el microscopio. guarda la separacion entre la punta y el
+  // foco del lente, y distancia entre foto y foto para hacer el panorama
+
+  gfx.fillScreen(Black);
+  gfx.setCursor(0, 10);
+
+  // corroboramos que el origen está en el fijado por la medicion
+  if (not medicionCompletada) {
+    //          --------------------
+    alertError("Calibrar despues de "
+               "hacer una medicion");
+    return proceed;
+  }
+
+  stepperY->move(mm2step(-1));
+
+  gfx.fillScreen(Black);
+  gfx.setTextColor(LighterBlue);
+  gfx.setCursor(0, 0);
+  //           --------------------
+  gfx.println("Mover la muestra    "
+              "hasta que el centro "
+              "de la imagen sea el "
+              "inicio de la raya");
+  delay(500);
+
+  gfx.setCursor(200, 110);
+  gfx.setTextColor(Gray);
+  gfx.println("OK");
+  delay(500);
+
+  moverMuestra();
+
+  gfx.setCursor(200, 110);
+  gfx.setTextColor(Black, LighterRed);
+  gfx.println("OK");
+
+  distPuntaFoco = stepperX->getCurrentPosition();
+  delay(500);
+
+  gfx.fillScreen(Black);
+  gfx.setTextColor(LighterBlue);
+  gfx.setCursor(0, 0);
+
+  //           --------------------
+  gfx.println("Mover la muestra    "
+              "para que se solape  "
+              "un 10% con la       "
+              "imagen anterior");
+
+  gfx.setCursor(200, 110);
+  gfx.setTextColor(Gray);
+  gfx.println("OK");
+
+  moverMuestra();
+
+  gfx.setCursor(200, 110);
+  gfx.setTextColor(Black, LighterRed);
+  gfx.println("OK");
+  delay(500);
+
+  distPanorama = stepperX->getCurrentPosition() - distPuntaFoco;
+
+  gfx.fillScreen(Black);
+  gfx.setTextColor(LighterBlue);
+  gfx.setCursor(0, 0);
+
+  debugf("\ndist punta foco: %d, dist panorama %d\n", distPuntaFoco,
+         distPanorama);
+  updatePrefs(distPuntaFoco, "distPuntaFoco");
+  updatePrefs(distPanorama, "distPanorama");
+
+  //           --------------------
+  gfx.println("Calibracion completa"
+              "volviendo al origen");
+  stepperX->setSpeedInHz(maxSpeedJog);
+  stepperX->moveTo(0);
+  delay(2000);
+  nav.refresh();
   return proceed;
 }
 
@@ -951,19 +1169,6 @@ result calibrarPID() {
   return proceed;
 }
 
-void calibrarMicroscopio() {
-
-  // despues de hacer una raya, da direcciones para mover la muestra hasta
-  // que se vea en el microscopio. guarda la separacion entre la punta y el
-  // foco del lente, y distancia entre foto y foto para hacer el panorama
-
-  // corroboramos que el origen está en el fijado por la medicion
-  if not medicionCompletada {
-    // mostrar mensaje
-    return proceed
-  }
-}
-
 long leerCelda() { return scale.get_units(numSamples); }
 
 result toggleCalibracionCelda() {
@@ -976,14 +1181,16 @@ result toggleCalibracionCelda() {
 }
 
 void initMotors() {
+  // Y es positivo hacia abajo
+  // X es positivo hacia la izquierda
   engine.init();
   stepperX = engine.stepperConnectToPin(stepX);
-  stepperX->setDirectionPin(dirX);
+  stepperX->setDirectionPin(dirX, false);
   stepperX->setSpeedInHz(maxSpeedX);
   stepperX->setAcceleration(accelerationX);
 
   stepperY = engine.stepperConnectToPin(stepY);
-  stepperY->setDirectionPin(dirY, false);
+  stepperY->setDirectionPin(dirY);
   stepperY->setSpeedInHz(maxSpeedX);
   stepperY->setAcceleration(accelerationX);
 
@@ -999,17 +1206,16 @@ void initMotors() {
   driverY.pwm_autoscale(1);
   driverY.microsteps(MICROSTEP);
 
-  stepperX->move(mm2step(1));
-  stepperX->move(mm2step(-1));
-  stepperY->move(mm2step(-1));
-  stepperY->move(mm2step(1));
+  stepperY->move(mm2step(-0.1), true);
+  stepperX->move(mm2step(-0.1), true);
+  stepperX->move(mm2step(0.1));
+  stepperY->move(mm2step(0.1));
 
   stepperX->setCurrentPosition(0);
   stepperY->setCurrentPosition(0);
 }
 
 result updateLargo() {
-
   // calcula el nuevo largo segun el loadingRate, y limpia el menu
   largo = (float)(fuerzaFinal - fuerzaInicialDin) / loadingRate;
   mainMenu[3].dirty = true;
@@ -1036,8 +1242,10 @@ void initPreferences() {
     prefs.putInt("maxSpeedX", maxSpeedX);
     prefs.putInt("accelerationX", accelerationX);
     prefs.putInt("MICROSTEP", MICROSTEP);
-    prefs.putInt("buffer", buffer);
     prefs.putInt("TOL", TOL);
+
+    prefs.putInt("distPuntaFoco", distPuntaFoco);
+    prefs.putInt("distPanorama", distPanorama);
 
     prefs.putBool("init", true);
 
@@ -1050,9 +1258,11 @@ void initPreferences() {
     prefs.putDouble("Kimin", Kimin);
     prefs.putDouble("Kimax", Kimax);
     prefs.putDouble("Kiinc", Kiinc);
+
   } else {
-    prefs.putInt("fInicialDin", fuerzaInicialDin);
-    prefs.putInt("fInicialCte", fuerzaInicialCte);
+
+    // prefs.putInt("fInicialDin", fuerzaInicialDin);
+    // prefs.putInt("fInicialCte", fuerzaInicialCte);
     Kp = prefs.getDouble("Kp");
     Ki = prefs.getDouble("Ki");
     Kd = prefs.getDouble("Kd");
@@ -1072,8 +1282,10 @@ void initPreferences() {
     maxSpeedX = prefs.getInt("maxSpeedX");
     accelerationX = prefs.getInt("accelerationX");
     MICROSTEP = prefs.getInt("MICROSTEP");
-    buffer = prefs.getInt("buffer");
     TOL = prefs.getInt("TOL");
+
+    distPuntaFoco = prefs.getInt("distPuntaFoco");
+    distPanorama = prefs.getInt("distPanorama");
 
     Kpmin = prefs.getDouble("Kpmin");
     Kpmax = prefs.getDouble("Kpmax");
