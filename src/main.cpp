@@ -107,10 +107,9 @@ long reading = -1;
 int numSamples = 1;
 bool calibrarCelda = false;
 
-// Setup TFT colors.  Probably stop using these and use the colors defined by
-// ArduinoMenu
-#define BACKCOLOR TFT_BLACK
-#define TEXTCOLOR TFT_WHITE
+#define MAX_DEPTH 5
+#define CENTERX 120
+#define CENTERY 62
 
 // params menu
 int chooseField = 1;
@@ -147,7 +146,8 @@ double Kpmin = 0, Kpmax = 0, Kpinc = 0, Kimin = 0, Kimax = 0, Kiinc = 0;
 int MICROSTEP = 256;
 // int maxSpeedX = 10000;
 int mm2step(float mm) { return mm * MICROSTEP * 100; }
-float step2mm(int step) { return step / (MICROSTEP * 100); }
+float step2mm(int step) { return step / (MICROSTEP * 100.); }
+float step2mm(float step) { return step / (MICROSTEP * 100.); }
 int mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
 float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 
@@ -275,8 +275,6 @@ result updateEEPROM() {
   // writeEEPROM();
   return quit;
 }
-
-#define MAX_DEPTH 5
 
 int ejeACalibrar = 1;
 int toggleDummy = 0;
@@ -476,8 +474,7 @@ void alertError(String msg) {
 void alertMsg(String msg) {
   gfx.fillScreen(Black);
   gfx.setTextColor(LighterBlue);
-  gfx.setCursor(80, 60);
-  gfx.println(msg);
+  gfx.drawCentreString(msg, CENTERX, 15, 1);
 }
 
 void setup() {
@@ -513,18 +510,27 @@ void setup() {
   scale.begin(load, SCK);
   if (scale.wait_ready_retry(3, 500)) {
     scale.set_scale(CALIBRATION_FACTOR / 9.8066);
-    debugln("\nTare... remove any weights from the scale.");
+    debugln("Tare... remove any weights from the scale.");
     scale.tare(20);
     debugln("Tare done...");
   } else {
-    debugln("\nHX711 not found.");
+    debugln("HX711 not found.");
     alertMsg("Celda de carga desconectada\nConectar y reiniciar");
   }
   fuerzaPID.SetMode(0);
   updateLargo();
   emergencyStopIsActive = false;
-  debugf("dist punta foco %d\n", distPuntaFoco);
-  debugf("dist punta foco %d\n", distPanorama);
+
+  // debugf("# dist punta foco %d\n", distPuntaFoco);
+  // debugf("# dist panorama %d\n", distPanorama);
+  // debug("mm2step ");
+  // debugln(mm2step(3.140010));
+  // debug("step2mm ");
+  // debugln(step2mm(3140010));
+  // debug("mmxm2stepxs ");
+  // debugln(mmxm2stepxs(3.140010));
+  // debug("stepxs2mmxm ");
+  // debugln(stepxs2mmxm(3140010));
 }
 
 void loop() {
@@ -545,7 +551,6 @@ void loop() {
 void moverMuestra() {
   //  samplea `cantidad` de veces y toma el promedio para ver el cero del
   //  joystick
-  // nav.poll(); // para que aparezca el ON en el menu
   int suma = 0;
   int cantidad = 50;
   for (int i = 0; i < cantidad; i++) {
@@ -570,6 +575,7 @@ void moverMuestra() {
   stepperX->setAcceleration(accelerationJog);
   stepperY->setAcceleration(accelerationJog);
 
+  int fin = 0;
   while (digitalRead(joySW)) {
     unsigned long current_time = millis();
     if (current_time - last_input_time > INPUT_READ_INTERVAL) {
@@ -622,6 +628,7 @@ void moverMuestra() {
 
 result moverMuestraMenu() {
   nav.doOutput();
+  // alertMsg("DEFINIR ORIGEN");
   moverMuestra();
   nav.refresh();
   return proceed;
@@ -759,9 +766,6 @@ result gridSearch() {
   return proceed;
 }
 
-#define CENTERX 120
-#define CENTERY 62
-
 void progressBar(char step, float ratio) {
   switch (step) {
   case 'a':
@@ -781,17 +785,12 @@ void progressBar(char step, float ratio) {
 
 result medir() {
   // nav.doOutput();
-  gfx.fillScreen(Black);
-  gfx.setTextColor(LighterBlue);
-  gfx.drawCentreString("MIDIENDO", CENTERX, 15, 1);
+  alertMsg("MIDIENDO");
   progressBar('a', .0);
   gfx.setTextColor(Gray);
   gfx.setTextSize(1);
   gfx.drawRightString("CANCELAR", GFX_WIDTH - 10, GFX_HEIGHT - 20, 1);
   gfx.setTextSize(2);
-  // reset el queue de los motores, trato de evitar que arranque solo a
-  // hacer cosas stepperX -> forceStopAndNewPosition(0); stepperY ->
-  // forceStopAndNewPosition(0);
 
   updatePrefs(Kp, "Kp");
   updatePrefs(Kd, "Kd");
@@ -803,13 +802,12 @@ result medir() {
   updatePrefs(largo, "largo");
   updatePrefs(loadingRate, "loadingRate");
 
-  float TOLmod = TOL;
-
   // desacople las fuerzas iniciales de los menu con la de la medicion
   // ahora tengo que ver cual es la que aplica a esta medicion
   fuerzaInicial = constante ? fuerzaInicialCte : fuerzaInicialDin;
 
-  fuerzaSetpoint = -100 + fuerzaInicial * 1000;
+  fuerzaSetpoint = fuerzaInicial * 1000;
+  // fuerzaSetpoint = -100 + fuerzaInicial * 1000;
 
   // paso a una vel de acercamiento proporcional a la raiz de la fuerza
   // inicial. uso un parametro que lo deje igual a como era antes para 5N
@@ -818,9 +816,10 @@ result medir() {
   if (fuerzaInicial == 0) {
     speed = 800; // si fuerza inicial es cero no le gusta al set speed
   }
-  // valor en Newton
+  // valor en miliNewton
   int fuerzaFinalM = fuerzaFinal * 1000;
-  int fuerzaInicialM = -100 + fuerzaInicial * 1000;
+  int fuerzaInicialM = fuerzaInicial * 1000;
+  // int fuerzaInicialM = -100 + fuerzaInicial * 1000;
 
   int deltaF = fuerzaFinal - fuerzaInicial;
   int deltaFM = fuerzaFinalM - fuerzaInicialM;
@@ -831,9 +830,8 @@ result medir() {
 
   int errAbs = 0;
 
-  fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
-  fuerzaPID.SetSampleTime(50);
-  fuerzaPID.SetTunings(Kp, Ki, Kd);
+  fuerzaPID.SetOutputLimits(-3000, 3000);
+  fuerzaPID.SetSampleTime(10);
 
   unsigned long current_time = millis();
 
@@ -842,7 +840,7 @@ result medir() {
   fuerzaPID.SetMode(MANUAL);
   // la primera linea tiene los parámetros de la medicion
   debugln("fuerzaInicial, fuerzaFinal, largo, velocidad, Kp, Ki, Kd");
-  monitorf("%d,%d,%f,%d,%f,%f,%f\n", fuerzaInicial, fuerzaFinal, largo,
+  monitorf("#%d,%d,%f,%d,%f,%f,%f\n", fuerzaInicial, fuerzaFinal, largo,
            velocidad, Kp, Ki, Kd);
 
   // luego siguen el siguiente orden
@@ -850,28 +848,24 @@ result medir() {
 
   stepperX->setCurrentPosition(0);
   stepperY->setSpeedInHz(speed);
-  stepperY->setAcceleration(accelerationX * 10);
   stepperY->runForward();
 
   while (digitalRead(joySW)) {
-    // if (emergencyStopCheck()) {
-    //   debugln("emergencyStop en Acercamiento");
-    //   return proceed;
-    // }
     fuerzaInput = scale.get_units(numSamples); // newton
-    if (fuerzaInput > 50) {
+    if (fuerzaInput > 30) {
       stepperY->forceStop();
       break;
     }
-    monitorf("%d,%d,%d,%f,%f,%f,%d\n", millis(), stepperX->getCurrentPosition(),
-             stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint,
-             fuerzaOutput, errAbs);
+    monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", millis,
+             step2mm(stepperX->getCurrentPosition()),
+             step2mm(stepperY->getCurrentPosition()), fuerzaInput,
+             fuerzaSetpoint, fuerzaOutput, errAbs);
   }
 
-  // set el cero para que la punta quede 0.5mm arriba  de la muestra
+  // set el cero para que la punta quede `separacion` arriba  de la muestra
   stepperY->setCurrentPosition(mm2step(separacion));
 
-  TOLmod = 100 + (TOL * deltaF / 5);
+  // float TOLmod = 100 + (TOL * deltaF / 5);
 
   ////// ESTABILIZACION //////
 
@@ -879,8 +873,12 @@ result medir() {
   monitorln("0,0,0,0,0,0,0");
   progressBar('e', .0);
 
+  stepperY->setAcceleration(accelerationX * 20);
   stepperY->setSpeedInHz(speed / 4);
   stepperY->runForward();
+  fuerzaOutput = 300;
+  fuerzaPID.SetMode(AUTOMATIC);
+  fuerzaPID.SetTunings(0.1 * fuerzaInicial / 5., 0.08, 0.0);
 
   while (digitalRead(joySW)) {
     // if (emergencyStopCheck()) {
@@ -888,8 +886,12 @@ result medir() {
     //   return proceed;
     // }
     fuerzaInput = scale.get_units(numSamples);
+    fuerzaPID.Compute();
+    stepperY->setSpeedInHz((uint32_t)fuerzaOutput);
+    stepperY->runForward();
+
     error = fuerzaSetpoint - fuerzaInput;
-    // if (error < TOLmod || fuerzaInput > fuerzaSetpoint * 1.1) {
+    // if (error < TOLmod - 500 || fuerzaInput > fuerzaSetpoint * 1.1) {
     if (fuerzaInput > fuerzaSetpoint * 1.1) {
       stepperY->forceStop();
       break;
@@ -899,9 +901,10 @@ result medir() {
     if (current_time - last_input_time > 20) {
       errAbs += abs(error) / 10;
 
-      monitorf("%d,%d,%d,%f,%f,%f,%d\n", current_time,
-               stepperX->getCurrentPosition(), stepperY->getCurrentPosition(),
-               fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
+      monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", current_time,
+               step2mm(stepperX->getCurrentPosition()),
+               step2mm(stepperY->getCurrentPosition()), fuerzaInput,
+               fuerzaSetpoint, fuerzaOutput, errAbs);
       last_input_time = current_time;
     }
   }
@@ -912,9 +915,9 @@ result medir() {
 
   monitorln("1,1,1,1,1,1,1");
 
+  fuerzaPID.SetTunings(Kp, Ki, Kd);
   progressBar('s', .0);
   int stepperXPos = 0;
-  fuerzaPID.SetMode(AUTOMATIC);
   stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
   stepperX->move(largoSteps);
 
@@ -947,9 +950,9 @@ result medir() {
       //   break;
       // };
       errAbs += abs(error) / 10.;
-      monitorf("%d,%d,%d,%f,%f,%f,%d\n", current_time, stepperXPos,
-               stepperY->getCurrentPosition(), fuerzaInput, fuerzaSetpoint,
-               fuerzaOutput, errAbs);
+      monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", current_time,
+               step2mm(stepperXPos), step2mm(stepperY->getCurrentPosition()),
+               fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
       last_input_time = current_time;
     }
     if (current_time - last_redraw > 40) {
@@ -957,28 +960,38 @@ result medir() {
       last_redraw = current_time;
     }
   }
+  fuerzaPID.SetMode(MANUAL);
 
   stepperX->forceStop();
   stepperY->forceStop();
+  // espero a que la cola de los motores se limpie
+  delay(50);
 
   if (not(stepperX->isRunning())) {
     toggleDummy = 0;
     constante = 0;
   }
 
+  debugln("t, x, y, fIn, fSet, fOut, errAbs");
+
   // sacar la punta y volver al origen:
   stepperX->setSpeedInHz(2 * maxSpeedX);
   stepperY->setSpeedInHz(2 * maxSpeedX);
   // si la fuerza al final de la raya fue alta, retroceder la punta un poco
   // para para que no salte al retirarla
+  debugf("running? X %d, Y %d\n", stepperX->isRunning(), stepperY->isRunning());
+  debugf("entries? X %d, Y %d\n", stepperX->queueEntries(),
+         stepperY->queueEntries());
   if (fuerzaInput > 10000) {
-    stepperX->move(mm2step(0.1), true);
+    debugln("retreat");
+    debugf("X retreat = %d, dist = %d\n",
+           stepperX->move(-1 * direccionRayado * mm2step(0.1), true),
+           mm2step(0.1));
   }
-  // blocking = true previene que el final de la raya este puntiagudo
+  debugln("reset");
   stepperY->moveTo(0, true);
   stepperX->moveTo(0);
 
-  fuerzaPID.SetMode(MANUAL);
   fuerzaOutput = 0.;
   medicionCompletada = true;
   return proceed;
@@ -1076,8 +1089,9 @@ result calibrarMicroscopio() {
   gfx.setTextColor(LighterBlue);
   gfx.setCursor(0, 0);
 
-  debugf("\ndist punta foco: %d, dist panorama %d\n", distPuntaFoco,
-         distPanorama);
+  debugln("valores guardados:");
+  debugf("dist punta foco %d\n", distPuntaFoco);
+  debugf("dist panorama %d\n", distPanorama);
   updatePrefs(distPuntaFoco, "distPuntaFoco");
   updatePrefs(distPanorama, "distPanorama");
 
