@@ -157,6 +157,7 @@ int distPanorama = 14648;
 int maxSpeedX = mmxm2stepxs(100);
 int accelerationX = 4 * maxSpeedX;
 int maxSpeedJog = 4 * maxSpeedX;
+int maxSpeedJogY = maxSpeedJog * 0.8;
 int accelerationJog = 4 * maxSpeedJog;
 
 // params tiempo
@@ -576,36 +577,41 @@ void moverMuestra() {
       int joyY_value = analogRead(joyY);
       // los menos son para que den bien las direcciones
       int desired_speedX = -map(joyX_value, 0, 4095, -maxSpeedJog, maxSpeedJog);
-      int desired_speedY = -map(joyY_value, 0, 4095, -maxSpeedJog, maxSpeedJog);
+      int desired_speedY =
+          -map(joyY_value, 0, 4095, -maxSpeedJogY, maxSpeedJogY);
 
       stepperX->setSpeedInHz(abs(desired_speedX));
       stepperY->setSpeedInHz(abs(desired_speedY));
       debugf("X %.0f; Y %.0f\n", joyX_value - centroX, joyY_value - centroY);
-
-      if (not(joyX_value > bufferMinX && bufferMaxX > joyX_value)) {
+      bool joyXinDeadZone = joyX_value > bufferMinX && bufferMaxX > joyX_value;
+      if (not(joyXinDeadZone)) {
         if (desired_speedX < 0) {
-          // debugln("X negativo");
           stepperX->runBackward();
         } else if (desired_speedX > 0) {
-          // debugln("X positivo");
           stepperX->runForward();
         }
       }
-      if (not(joyY_value > bufferMinY && bufferMaxY > joyY_value)) {
+      // retiro la punta si la chocamos un poco
+      if (scale.get_units(1) > 30) {
+        stepperY->forceStop();
+        while (scale.get_units(1) > 30) {
+          stepperY->move(mm2step(-0.5));
+        }
+        continue;
+      }
+      bool joyYinDeadZone = joyY_value > bufferMinY && bufferMaxY > joyY_value;
+      if (not(joyYinDeadZone)) {
         if (desired_speedY < 0) {
-          // debugln("Y negativo");
           stepperY->runBackward();
         } else if (desired_speedY > 0) {
-          // debugln("Y positivo");
           stepperY->runForward();
         }
-        // debugf("\n");
       }
-      if (joyY_value > bufferMinY && bufferMaxY > joyY_value) {
-        stepperY->stopMove();
-      }
-      if (joyX_value > bufferMinX && bufferMaxX > joyX_value) {
+      if (joyXinDeadZone) {
         stepperX->stopMove();
+      }
+      if (joyYinDeadZone) {
+        stepperY->stopMove();
       }
       last_input_time = current_time;
     }
