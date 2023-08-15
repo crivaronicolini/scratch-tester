@@ -151,8 +151,8 @@ float step2mm(float step) { return step / (MICROSTEP * 100.); }
 int mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
 float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
 
-int distPuntaFoco = -1898515;
-int distPanorama = 14648;
+int distPuntaFoco = -1217866;
+int distPanorama = 18251;
 
 int maxSpeedX = mmxm2stepxs(100);
 int accelerationX = 4 * maxSpeedX;
@@ -169,7 +169,7 @@ unsigned long lastStopTime = 0;
 
 // params botones
 int joySW_status = 1;
-bool emergencyStopIsActive = false;
+// bool emergencyStopIsActive = false;
 int buffer = 150;
 int test = 44;
 
@@ -197,10 +197,11 @@ void testPrefs();
 result updateLargo();
 result resetearConfig();
 result despejar();
-result medir();
+bool medir();
 result mapear();
 void moverMuestra();
 result moverMuestraMenu();
+result medirMenu();
 result calibrarMotores();
 result calibrarPID();
 result gridSearch();
@@ -211,9 +212,9 @@ long leerCelda();
 result toggleCalibracionCelda();
 void initPreferences();
 void initMotors();
-bool emergencyStopCheck();
-void emergencyStop();
-void IRAM_ATTR emergencyStopActivate();
+// bool emergencyStopCheck();
+// void emergencyStop();
+// void IRAM_ATTR emergencyStopActivate();
 void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 
 #define DEBUG 1
@@ -257,9 +258,21 @@ void IRAM_ATTR onTimer(); // Start the timer to read the clickEncoder every 1 ms
 //////////////////////////////////////////////////////////
 
 result medirYMicroscopio() {
-  medir();
-  // stepperX->setSpeedInHz(maxSpeedJog);
-  // stepperX->move(-abs(distPuntaFoco));
+  bool canceled = medir();
+  if (canceled) {
+    return proceed;
+  } else {
+    // stepperX->setSpeedInHz(maxSpeedJog);
+    // stepperX->move(-abs(distPuntaFoco));
+    return proceed;
+  };
+}
+
+result irAlMicro() {
+  stepperX->stopMove();
+  stepperX->setSpeedInHz(maxSpeedJog);
+  stepperX->move(-abs(distPuntaFoco));
+  // nav.doNav(navCmd(escCmd));
   return proceed;
 }
 
@@ -282,8 +295,8 @@ int constante = 0;
 int toggleDummyDespejar = 0;
 int toggleDummyCalibrarMicro = 0;
 
-TOGGLE(toggleDummyCalibrarMicro, subMenuCalibrarMicroscopio,
-       "Microscopio:", doNothing, noEvent, noStyle,   //
+TOGGLE(toggleDummyCalibrarMicro, subMenuCalibrarMicroscopio, "Microscopio",
+       doNothing, noEvent, noStyle,                   //
        VALUE("", 1, calibrarMicroscopio, enterEvent), //
        VALUE("", 0, doNothing, noEvent));
 
@@ -322,10 +335,11 @@ TOGGLE(toggleDummy, subMenuToggleCalibrarPID, "Calibrar PID", doNothing,
        VALUE("", 1, calibrarPID, enterEvent), //
        VALUE("", 0, doNothing, noEvent));
 
-MENU(subMenuMidiendoyFotos, "Medir", medirYMicroscopio, enterEvent,
+MENU(subMenuMidiendoyFotos, "Microscopio", doNothing, enterEvent,
      wrapStyle,                                     //
      OP("Siguiente", siguienteFoto, enterEvent),    //
      OP("Anterior", anteriorFoto, enterEvent),      //
+     OP("Ir al micro", irAlMicro, enterEvent),      //
      OP("Ir al origen", volverAOrigen, enterEvent), //
      EXIT("<- Volver"));
 
@@ -335,6 +349,10 @@ MENU(subMenuMidiendoyFotosCte, "Medir F cte", medirYMicroscopio, enterEvent,
      OP("Anterior", anteriorFoto, enterEvent),          //
      OP("Volver al origen", volverAOrigen, enterEvent), //
      EXIT("<- Volver"));
+
+TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
+       VALUE(" ON", 1, medirMenu, enterEvent),
+       VALUE("", 0, doNothing, noEvent));
 
 TOGGLE(toggleDummy, subMenuToggleMapear, "Mapear", doNothing, noEvent, noStyle,
        VALUE("", 1, mapear, enterEvent), VALUE("", 0, doNothing, noEvent));
@@ -356,7 +374,8 @@ MENU(subMenuGridSearch, "Grid Search", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuMidiendoyFotos),
+     // SUBMENU(subMenuMidiendoyFotos),
+     SUBMENU(subMenuToggleMedir),
      FIELD(fuerzaInicialDin, "Fuerza inicial:", "N", 0, 200, 5, 1, updateLargo,
            enterEvent, noStyle),
      FIELD(fuerzaFinal, "Fuerza final:", "N", 0, 200, 5, 1, updateLargo,
@@ -404,7 +423,7 @@ MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      OP("Reseteo de fabrica", resetearConfig, enterEvent), //
      EXIT("<- Volver"));
 
-TOGGLE(toggleDummy, subMenuToggleDefinirOrigen, "Definir origen", doNothing,
+TOGGLE(toggleDummy, subMenuToggleDefinirOrigen, "Mover muestra", doNothing,
        noEvent, noStyle, //
        VALUE(" ON", 1, moverMuestraMenu, enterEvent),
        VALUE("", 0, doNothing, noEvent));
@@ -417,6 +436,7 @@ TOGGLE(toggleDummyDespejar, subMenuToggleDespejar, "Despejar muestra",
 MENU(mainMenu, "SCRATCHTESTER3000", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuToggleDefinirOrigen), //
      SUBMENU(subMenuMedir),               //
+     SUBMENU(subMenuMidiendoyFotos),      //
      SUBMENU(subMenuMedirCte),            //
      SUBMENU(subMenuToggleDespejar),      //
      SUBMENU(subMenuCalibrar));
@@ -459,7 +479,7 @@ portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 void alertError(String msg) {
   gfx.fillScreen(Black);
   gfx.setTextColor(DarkerRed);
-  gfx.setCursor(80, 60);
+  gfx.setCursor(0, 0);
   gfx.println(msg);
 
   gfx.setCursor(200, 110);
@@ -496,12 +516,12 @@ void setup() {
   debugln("Initialized display");
   gfx.setTextFont(1);
   gfx.setTextSize(2);
-
   debugln("done");
 
   nav.showTitle = true; // Show titles in the menus and submenus
   //  nav.timeOut = 60;  // Timeout after 60 seconds of inactivity
   //  nav.idleOn(); // Start with the main screen and not the menu
+  nav.refresh();
 
   pinMode(encBtn, INPUT_PULLUP);
   pinMode(stopSW, INPUT_PULLUP);
@@ -519,18 +539,7 @@ void setup() {
   }
   fuerzaPID.SetMode(0);
   updateLargo();
-  emergencyStopIsActive = false;
-
-  // debugf("# dist punta foco %d\n", distPuntaFoco);
-  // debugf("# dist panorama %d\n", distPanorama);
-  // debug("mm2step ");
-  // debugln(mm2step(3.140010));
-  // debug("step2mm ");
-  // debugln(step2mm(3140010));
-  // debug("mmxm2stepxs ");
-  // debugln(mmxm2stepxs(3.140010));
-  // debug("stepxs2mmxm ");
-  // debugln(stepxs2mmxm(3140010));
+  // emergencyStopIsActive = false;
 }
 
 void loop() {
@@ -626,10 +635,30 @@ void moverMuestra() {
   stepperX->stopMove();
 }
 
+result medirMenu() {
+  // nav.doOutput();
+  debugln("nav doOutput");
+  // alertMsg("DEFINIR ORIGEN");
+  bool canceled = medir();
+  // encStream.flush();
+  // toggleDummy = 0;
+  if (not canceled) {
+    debugln("toggledummy");
+    // delay(950);
+    toggleDummy = 0;
+  }
+  // nav.doOutput();
+  nav.refresh();
+  // nav.refresh();
+  debugln("nav refresh");
+  return proceed;
+}
+
 result moverMuestraMenu() {
   nav.doOutput();
   // alertMsg("DEFINIR ORIGEN");
   moverMuestra();
+  // toggleDummy = 0;
   nav.refresh();
   return proceed;
 }
@@ -660,9 +689,9 @@ result mapear() {
 
   stepperY->runForward();
   while (digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      break;
-    }
+    // if (emergencyStopCheck()) {
+    //   break;
+    // }
     fuerzaInput = scale.get_units(numSamples); // newton
     if (fuerzaInput > 50) {
       stepperY->forceStop();
@@ -685,9 +714,9 @@ result mapear() {
   float ceroCelda = scale.get_units(10);
 
   while (m < 50 && digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      break;
-    }
+    // if (emergencyStopCheck()) {
+    //   break;
+    // }
     fuerzaInput = scale.get_units(numSamples); // newton
     altura = fuerzaInput - ceroCelda;
     unsigned long current_time = millis();
@@ -704,9 +733,9 @@ result mapear() {
   stepperX->move(largoSteps);
 
   while (digitalRead(joySW) && stepperX->isRunning()) {
-    if (emergencyStopCheck()) {
-      break;
-    }
+    // if (emergencyStopCheck()) {
+    //   break;
+    // }
     fuerzaInput = scale.get_units(numSamples); // newton
     altura = fuerzaInput - ceroCelda;
     unsigned long current_time = millis();
@@ -783,7 +812,7 @@ void progressBar(char step, float ratio) {
   }
 }
 
-result medir() {
+bool medir() {
   // nav.doOutput();
   alertMsg("MIDIENDO");
   progressBar('a', .0);
@@ -801,6 +830,8 @@ result medir() {
   updatePrefs(fuerzaFinal, "fuerzaFinal");
   updatePrefs(largo, "largo");
   updatePrefs(loadingRate, "loadingRate");
+  updatePrefs(separacion, "separacion");
+  updatePrefs(TOL, "TOL");
 
   // desacople las fuerzas iniciales de los menu con la de la medicion
   // ahora tengo que ver cual es la que aplica a esta medicion
@@ -830,8 +861,8 @@ result medir() {
 
   int errAbs = 0;
 
-  fuerzaPID.SetOutputLimits(-3000, 3000);
-  fuerzaPID.SetSampleTime(10);
+  fuerzaPID.SetOutputLimits(-500, 500);
+  fuerzaPID.SetSampleTime(80);
 
   unsigned long current_time = millis();
 
@@ -856,27 +887,29 @@ result medir() {
       stepperY->forceStop();
       break;
     }
-    monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", millis,
+    monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", millis(),
              step2mm(stepperX->getCurrentPosition()),
              step2mm(stepperY->getCurrentPosition()), fuerzaInput,
              fuerzaSetpoint, fuerzaOutput, errAbs);
   }
 
   // set el cero para que la punta quede `separacion` arriba  de la muestra
-  stepperY->setCurrentPosition(mm2step(separacion));
+  // stepperY->setCurrentPosition(mm2step(separacion));
+  stepperY->forceStopAndNewPosition(mm2step(separacion));
 
   // float TOLmod = 100 + (TOL * deltaF / 5);
 
   ////// ESTABILIZACION //////
 
   // anuncio las etapas: 0 = Estabilizacion, 1 = Acercamiento
-  monitorln("0,0,0,0,0,0,0");
+  monitorln("#0,0,0,0,0,0,0");
   progressBar('e', .0);
 
   stepperY->setAcceleration(accelerationX * 20);
+  debugf("speed pid %f, speed/4 %f\n", speed, speed / 4);
   stepperY->setSpeedInHz(speed / 4);
   stepperY->runForward();
-  fuerzaOutput = 300;
+  fuerzaOutput = 0;
   fuerzaPID.SetMode(AUTOMATIC);
   fuerzaPID.SetTunings(0.1 * fuerzaInicial / 5., 0.08, 0.0);
 
@@ -892,7 +925,7 @@ result medir() {
 
     error = fuerzaSetpoint - fuerzaInput;
     // if (error < TOLmod - 500 || fuerzaInput > fuerzaSetpoint * 1.1) {
-    if (fuerzaInput > fuerzaSetpoint * 1.1) {
+    if (fuerzaInput > fuerzaSetpoint * 0.95) {
       stepperY->forceStop();
       break;
     }
@@ -913,7 +946,7 @@ result medir() {
 
   ////// MEDICION //////
 
-  monitorln("1,1,1,1,1,1,1");
+  monitorln("#1,1,1,1,1,1,1");
 
   fuerzaPID.SetTunings(Kp, Ki, Kd);
   progressBar('s', .0);
@@ -944,8 +977,7 @@ result medir() {
       // debugln(abs(error / fuerzaSetpoint));
       // if (abs(error / fuerzaSetpoint) > 0.45) {
       //   debugln("fuerza lejos del setpoint");
-      //   //          --------------------
-      //   alertError("Fuerza lejos"
+      //   //          -------------------- alertError("Fuerza lejos"
       //              "del setpoint");
       //   break;
       // };
@@ -962,39 +994,58 @@ result medir() {
   }
   fuerzaPID.SetMode(MANUAL);
 
-  stepperX->forceStop();
-  stepperY->forceStop();
-  // espero a que la cola de los motores se limpie
-  delay(50);
+  bool canceled = false;
 
-  if (not(stepperX->isRunning())) {
-    toggleDummy = 0;
-    constante = 0;
-  }
+  if (stepperX->isRunning()) {
+    canceled = true;
+  };
+
+  stepperX->stopMove();
+  stepperY->stopMove();
+  // espero a que la cola de los motores se limpie
+  // stepperY->runBackward();
+  // delay(100);
+
+  // if (not(stepperX->isRunning())) {
+  //   toggleDummy = 0;
+  //   constante = 0;
+  // }
 
   debugln("t, x, y, fIn, fSet, fOut, errAbs");
 
+  // debugf("running? X %d, Y %d\n", stepperX->isRunning(),
+  // stepperY->isRunning()); debugf("entries? X %d, Y %d\n",
+  // stepperX->queueEntries(),
+  //        stepperY->queueEntries());
+
   // sacar la punta y volver al origen:
+  debugf("acc Y: %d ", stepperY->setAcceleration(4 * accelerationX));
+  // debugf("speed Y: %d ", stepperY->setSpeedInHz(2 * maxSpeedX));
   stepperX->setSpeedInHz(2 * maxSpeedX);
   stepperY->setSpeedInHz(2 * maxSpeedX);
-  // si la fuerza al final de la raya fue alta, retroceder la punta un poco
-  // para para que no salte al retirarla
-  debugf("running? X %d, Y %d\n", stepperX->isRunning(), stepperY->isRunning());
-  debugf("entries? X %d, Y %d\n", stepperX->queueEntries(),
-         stepperY->queueEntries());
+  // debugf("X:%d\n", stepperX->setSpeedInHz(2 * maxSpeedX));
+
+  // // si la fuerza al final de la raya fue alta, retroceder la punta un poco
+  // // para para que no salte al retirarla
   if (fuerzaInput > 10000) {
     debugln("retreat");
     debugf("X retreat = %d, dist = %d\n",
            stepperX->move(-1 * direccionRayado * mm2step(0.1), true),
            mm2step(0.1));
   }
-  debugln("reset");
+
   stepperY->moveTo(0, true);
   stepperX->moveTo(0);
-
+  // debugf("reset Y: %d ", stepperY->moveTo(0, true));
+  // debugf("X:%d\n", stepperX->moveTo(0));
+  // monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n",
+  // current_time,
+  //          step2mm(stepperX->getCurrentPosition()),
+  //          step2mm(stepperY->getCurrentPosition()), fuerzaInput,
+  //          fuerzaSetpoint, fuerzaOutput, errAbs);
   fuerzaOutput = 0.;
   medicionCompletada = true;
-  return proceed;
+  return canceled;
 }
 
 result siguienteFoto() {
@@ -1005,7 +1056,7 @@ result siguienteFoto() {
   //   return proceed;
   // }
   debugln("sig foto");
-  stepperX->move(-distPanorama);
+  stepperX->move(distPanorama);
   return proceed;
 }
 
@@ -1016,7 +1067,7 @@ result anteriorFoto() {
   //   return proceed;
   // }
   debugln("ant foto");
-  stepperX->move(distPanorama);
+  stepperX->move(-distPanorama);
   return proceed;
 }
 
@@ -1026,7 +1077,6 @@ result calibrarMicroscopio() {
   // foco del lente, y distancia entre foto y foto para hacer el panorama
 
   gfx.fillScreen(Black);
-  gfx.setCursor(0, 10);
 
   // corroboramos que el origen está en el fijado por la medicion
   if (not medicionCompletada) {
@@ -1076,7 +1126,11 @@ result calibrarMicroscopio() {
   gfx.setTextColor(Gray);
   gfx.println("OK");
 
+  // uso una velocidad mucho menor
+  int maxSpeedJogBackup = maxSpeedJog;
+  maxSpeedJog = maxSpeedJog / 4;
   moverMuestra();
+  maxSpeedJog = maxSpeedJogBackup;
 
   gfx.setCursor(200, 110);
   gfx.setTextColor(Black, LighterRed);
@@ -1147,9 +1201,9 @@ result calibrarPID() {
 
   stepperY->runForward();
   while (digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      break;
-    }
+    // if (emergencyStopCheck()) {
+    //   break;
+    // }
     fuerzaInput = scale.get_units(numSamples); // newton
     if (fuerzaInput > 50) {
       stepperY->forceStop();
@@ -1162,9 +1216,9 @@ result calibrarPID() {
   stepperY->applySpeedAcceleration();
 
   while (digitalRead(joySW)) {
-    if (emergencyStopCheck()) {
-      break;
-    }
+    // if (emergencyStopCheck()) {
+    //   break;
+    // }
 
     unsigned long current_time = millis();
     if (current_time - last_input_time > 50) {
@@ -1313,6 +1367,31 @@ void initPreferences() {
     Kimin = prefs.getDouble("Kimin");
     Kimax = prefs.getDouble("Kimax");
     Kiinc = prefs.getDouble("Kiinc");
+
+    debugln("PARAMETROS GUARDADOS");
+    debugf("Kp: %f\n", Kp);
+    debugf("Ki: %f\n", Ki);
+    debugf("Kd: %f\n", Kd);
+
+    debugf("CALIBRATION_FACTOR: %f\n", CALIBRATION_FACTOR);
+    debugf("separacion: %f\n", separacion);
+    debugf("loadingRate: %d\n", loadingRate);
+
+    debugf("fuerzaInicialDin: %d\n", fuerzaInicialDin);
+    debugf("fuerzaInicialCte: %d\n", fuerzaInicialCte);
+    debugf("fuerzaFinal: %d\n", fuerzaFinal);
+    debugf("velocidad: %d\n", velocidad);
+    debugf("largo: %d\n", largo);
+    debugf("cantVeces: %d\n", cantVeces);
+    debugf("cantMm: %d\n", cantMm);
+    debugf("pasosPorMm: %d\n", pasosPorMm);
+    debugf("maxSpeedX: %d\n", maxSpeedX);
+    debugf("accelerationX: %d\n", accelerationX);
+    debugf("MICROSTEP: %d\n", MICROSTEP);
+    debugf("TOL: %d\n", TOL);
+
+    debugf("distPuntaFoco: %d\n", distPuntaFoco);
+    debugf("distPanorama: %d\n", distPanorama);
   }
 }
 
@@ -1339,56 +1418,65 @@ void testPrefs() {
 // ESP32 timer
 void IRAM_ATTR onTimer() { clickEncoder.service(); }
 
-void IRAM_ATTR emergencyStopActivate() {
-  unsigned long now = millis();
-
-  if (now - lastStopTime > 100) {
-    debugln("emergencyStop Activated");
-    emergencyStopIsActive = true;
-    lastStopTime = now;
-  }
-}
-
-bool emergencyStopCheck() {
-  if (emergencyStopIsActive) {
-    debugln("emergencyStopIsActive (if true):");
-    debugln(emergencyStopIsActive);
-    emergencyStop();
-    return true;
-  } else {
-    return false;
-  }
-}
-
-void emergencyStop() {
-  debugln("emergency Stop init");
-  int speedX = stepperX->getCurrentSpeedInMilliHz();
-  int speedY = stepperY->getCurrentSpeedInMilliHz();
-  stepperY->forceStop();
-  stepperX->forceStop();
-
-  debugf("Speed X= %d\n", speedX);
-  debugf("Speed Y= %d\n", speedY);
-  stepperY->setAcceleration(accelerationX);
-  if (speedX == 0) {
-    debugln("X speed cero");
-  } else if (speedX < 0) {
-    stepperX->move(mm2step(5));
-  } else if (speedX > 0) {
-    stepperX->move(mm2step(-5));
-  }
-
-  if (speedY == 0) {
-    debugln("Y speed cero");
-  } else if (speedY < 0) {
-    stepperY->move(mm2step(5));
-  } else if (speedY > 0) {
-    stepperY->move(mm2step(-5));
-  }
-  emergencyStopIsActive = false;
-}
+// void IRAM_ATTR emergencyStopActivate() {
+//   unsigned long now = millis();
+//
+//   if (now - lastStopTime > 100) {
+//     debugln("emergencyStop Activated");
+//     emergencyStopIsActive = true;
+//     lastStopTime = now;
+//   }
+// }
+//
+// bool emergencyStopCheck() {
+//   if (emergencyStopIsActive) {
+//     debugln("emergencyStopIsActive (if true):");
+//     debugln(emergencyStopIsActive);
+//     emergencyStop();
+//     return true;
+//   } else {
+//     return false;
+//   }
+// }
+//
+// void emergencyStop() {
+//   debugln("emergency Stop init");
+//   int speedX = stepperX->getCurrentSpeedInMilliHz();
+//   int speedY = stepperY->getCurrentSpeedInMilliHz();
+//   stepperY->forceStop();
+//   stepperX->forceStop();
+//
+//   debugf("Speed X= %d\n", speedX);
+//   debugf("Speed Y= %d\n", speedY);
+//   stepperY->setAcceleration(accelerationX);
+//   if (speedX == 0) {
+//     debugln("X speed cero");
+//   } else if (speedX < 0) {
+//     stepperX->move(mm2step(5));
+//   } else if (speedX > 0) {
+//     stepperX->move(mm2step(-5));
+//   }
+//
+//   if (speedY == 0) {
+//     debugln("Y speed cero");
+//   } else if (speedY < 0) {
+//     stepperY->move(mm2step(5));
+//   } else if (speedY > 0) {
+//     stepperY->move(mm2step(-5));
+//   }
+//   emergencyStopIsActive = false;
+// }
 
 result resetearConfig() {
+  alertMsg("RESETEAR PARAMETROS?");
+  //        --------------------
+  gfx.setCursor(0, 25);
+  //           --------------------
+  gfx.println("Mover el joystick  "
+              "hacia arriba y     "
+              "pulsa el boton para"
+              "confirmar");
+
   prefs.remove("init");
   return proceed;
 }
