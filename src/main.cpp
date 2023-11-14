@@ -205,6 +205,7 @@ result moverMuestraMenu();
 result medirMenu();
 result medirMenuCte();
 result calibrarMotores();
+result precisionMotores();
 result calibrarPID();
 result gridSearch();
 result calibrarMicroscopio();
@@ -319,6 +320,7 @@ TOGGLE(ejeACalibrar, subMenuToggleEjeACalibrar, "Motor a Calibrar:", doNothing,
 
 MENU(subMenuCalibrarMotores, "Motores", doNothing, noEvent, wrapStyle,
      OP("Calibrar", calibrarMotores, enterEvent),
+     OP("Ver presicion", precisionMotores, enterEvent),
      SUBMENU(subMenuToggleEjeACalibrar),
      FIELD(cantVeces, "Cantidad de veces:", "", 0, 200, 10, 0, doNothing,
            noEvent, noStyle),
@@ -427,12 +429,12 @@ MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuCalibrarCelda),       //
      SUBMENU(subMenuCalibrarMotores),     //
      SUBMENU(subMenuCalibrarMicroscopio), //
+     SUBMENU(subMenuResetearConfig),      //
      FIELD(TOL, "Tolerancia", "", 0, 1000, 10, 1, doNothing, noEvent, noStyle),
      FIELD(separacion, "Separacion", "", 0, 5, 1, 0.1, doNothing, noEvent,
            noStyle),
      FIELD(loadingRate, "Tasa de carga", "N/mm", 0, 100, 5, 1, doNothing,
            noEvent, noStyle),
-     SUBMENU(subMenuResetearConfig), //
      EXIT("<- Volver"));
 
 TOGGLE(toggleDummy, subMenuToggleDefinirOrigen, "Mover muestra", doNothing,
@@ -1145,6 +1147,85 @@ result calibrarMicroscopio() {
   stepperX->moveTo(0);
   delay(2000);
   nav.refresh();
+  return proceed;
+}
+
+void medirNveces(int N) {
+  int i = 0;
+  while (digitalRead(joySW)) {
+    fuerzaInput = scale.get_units(numSamples); // newton
+    monitorf("#%d,%d,%d,%.3f\n", millis(), stepperX->getCurrentPosition(),
+             stepperY->getCurrentPosition(), fuerzaInput);
+    // monitorf("#%d,%.3f,%.3f,%.0f\n", millis(),
+    //          step2um(stepperX->getCurrentPosition()),
+    //          step2um(stepperY->getCurrentPosition()), fuerzaInput);
+    if (i == N) {
+      // stepperY->forceStop();
+      break;
+    }
+    i++;
+  }
+};
+
+result precisionMotores() {
+  // copio de medir()
+  // la idea es tocar la superficie mucho mas despacio, avanzar en x, tocar
+  // denuevo y medir la fuerza que hacen distinta cantidad de microestps
+  fuerzaInicial = constante ? fuerzaInicialCte : fuerzaInicialDin;
+  fuerzaSetpoint = fuerzaInicial * 1000;
+  float speed = 2.2360 * maxSpeedX * sqrt(5) / 80;
+  if (fuerzaInicial == 0) {
+    speed = 800; // si fuerza inicial es cero no le gusta al set speed
+  }
+  int fuerzaFinalM = fuerzaFinal * 1000;
+  int fuerzaInicialM = fuerzaInicial * 1000;
+
+  stepperX->setCurrentPosition(0);
+  stepperY->setCurrentPosition(0);
+  stepperY->setSpeedInHz(speed / 10);
+  stepperY->runForward();
+
+  while (digitalRead(joySW)) {
+    fuerzaInput = scale.get_units(numSamples); // newton
+    if (fuerzaInput > 30) {
+      stepperY->forceStop();
+      break;
+    }
+    monitorf("#%d,%d,%d,%.3f\n", millis(), stepperX->getCurrentPosition(),
+             stepperY->getCurrentPosition(), fuerzaInput);
+    // monitorf("#%d,%.3f,%.3f,%.0f\n", millis(),
+    //          step2um(stepperX->getCurrentPosition()),
+    //          step2um(stepperY->getCurrentPosition()), fuerzaInput);
+  }
+  // pongo el cero en la superficie y levanto la punta `separacion`
+  stepperY->forceStopAndNewPosition(0);
+  stepperY->move(-mm2step(separacion));
+  medirNveces(30);
+
+  // muevo x en 10um
+  stepperX->moveTo(mm2step(0.01));
+
+  // avanzo denuevo pero mas lento y mido mientras
+  stepperY->setSpeedInHz(speed);
+  stepperY->moveTo(0);
+  medirNveces(30);
+
+  // ahora deberia estar en la superficie aplicando una fuerza minima
+  // muevo 1 step y mido
+  for (int i = 0; i < 10; i++) {
+    stepperY->move(1);
+    monitorf("#%d,%d,0,0\n", millis(), i);
+    medirNveces(50);
+  };
+
+  // muevo 5 step y mido
+  for (int i = 0; i < 10; i++) {
+    stepperY->move(5);
+    monitorf("#%d,%d,0,0\n", millis(), i);
+    medirNveces(50);
+  };
+
+  stepperY->moveTo(-mm2step(separacion));
   return proceed;
 }
 
