@@ -410,6 +410,11 @@ MENU(subMenuCalibrarPID, "PID", doNothing, noEvent, wrapStyle,
               doNothing, noEvent, noStyle),
      EXIT("<- Volver"));
 
+MENU(subMenuResetearConfig, "Resetear de fabrica", doNothing, noEvent,
+     wrapStyle,                                  //
+     OP("Resetear", resetearConfig, enterEvent), //
+     EXIT("Cancelar"));
+
 MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
      SUBMENU(subMenuCalibrarPID),         //
      SUBMENU(subMenuCalibrarCelda),       //
@@ -420,7 +425,7 @@ MENU(subMenuCalibrar, "Menu de calibracion", doNothing, noEvent, wrapStyle,
            noStyle),
      FIELD(loadingRate, "Tasa de carga", "N/mm", 0, 100, 5, 1, doNothing,
            noEvent, noStyle),
-     OP("Reseteo de fabrica", resetearConfig, enterEvent), //
+     SUBMENU(subMenuResetearConfig), //
      EXIT("<- Volver"));
 
 TOGGLE(toggleDummy, subMenuToggleDefinirOrigen, "Mover muestra", doNothing,
@@ -1468,15 +1473,14 @@ void IRAM_ATTR onTimer() { clickEncoder.service(); }
 // }
 
 result resetearConfig() {
-  alertMsg("RESETEAR PARAMETROS?");
+  alertMsg("BORRANDOD PARAMETROS");
+  prefs.remove("init");
   //        --------------------
+  delay(3000);
   gfx.setCursor(0, 25);
   //           --------------------
-  gfx.println("Mover el joystick  "
-              "hacia arriba y     "
-              "pulsa el boton para"
-              "confirmar");
-
-  prefs.remove("init");
+  gfx.println("Reiniciar el equipo "
+              "para ver los cambios");
+  delay(3000);
   return proceed;
 }
