@@ -137,15 +137,20 @@ int pasosPorMm = 1600;
 
 double Kpmin = 0, Kpmax = 0, Kpinc = 0, Kimin = 0, Kimax = 0, Kiinc = 0;
 
-// params motores
-// int maxSpeedX = 25000;
+// params motores:
+// factor = MICROSTEP * pasosmotor / pasotornillo = 256 * 200 /2 = 25600
 int MICROSTEP = 256;
-// int maxSpeedX = 10000;
-int mm2step(float mm) { return mm * MICROSTEP * 100; }
-float step2mm(int step) { return step / (MICROSTEP * 100.); }
-float step2mm(float step) { return step / (MICROSTEP * 100.); }
-int mmxm2stepxs(float mmxm) { return mmxm * MICROSTEP * 100 / 60; }
-float stepxs2mmxm(float stepxs) { return stepxs * 60 / (MICROSTEP * 100); }
+int factor = 25600;
+float factor_um = 25.600;
+float factor_t = factor / 60;
+
+int mm2step(float mm) { return mm * factor; }
+float step2um(int step) { return step / factor_um; }
+float step2um(float step) { return step / factor_um; }
+float step2mm(int step) { return step / factor; }
+float step2mm(float step) { return step / factor; }
+int mmxm2stepxs(float mmxm) { return mmxm * factor_t; }
+float stepxs2mmxm(float stepxs) { return stepxs / factor_t; }
 
 int distPuntaFoco = -1217866;
 int distPanorama = 18251;
@@ -198,6 +203,7 @@ result mapear();
 void moverMuestra();
 result moverMuestraMenu();
 result medirMenu();
+result medirMenuCte();
 result calibrarMotores();
 result calibrarPID();
 result gridSearch();
@@ -298,7 +304,8 @@ TOGGLE(toggleDummyCalibrarMicro, subMenuCalibrarMicroscopio, "Microscopio",
 
 MENU(subMenuCalibrarCelda, "Celda de Carga", toggleCalibracionCelda,
      (eventMask)(enterEvent | exitEvent), wrapStyle,
-     FIELD(reading, "F:", "mN", -1, 100000, 0, 0, doNothing, noEvent, noStyle),
+     // FIELD(reading, "F:", "mN", -1, 100000, 0, 0, doNothing, noEvent,
+     // noStyle),
      FIELD(CALIBRATION_FACTOR, "F calibracion:", "", 1, 200, 10, 1, doNothing,
            noEvent, noStyle),
      FIELD(numSamples, "N muestras:", "", 1, 100, 1, 0, doNothing, noEvent,
@@ -350,6 +357,10 @@ TOGGLE(toggleDummy, subMenuToggleMedir, "Medir", doNothing, noEvent, noStyle,
        VALUE(" ON", 1, medirMenu, enterEvent),
        VALUE("", 0, doNothing, noEvent));
 
+TOGGLE(toggleDummy, subMenuToggleMedirCte, "Medir F cte", doNothing, noEvent,
+       noStyle, VALUE(" ON", 1, medirMenuCte, enterEvent),
+       VALUE("", 0, doNothing, noEvent));
+
 TOGGLE(toggleDummy, subMenuToggleMapear, "Mapear", doNothing, noEvent, noStyle,
        VALUE("", 1, mapear, enterEvent), VALUE("", 0, doNothing, noEvent));
 
@@ -383,10 +394,10 @@ MENU(subMenuMedir, "Medir", doNothing, noEvent, wrapStyle,
      EXIT("<- Volver"));
 
 MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
-     SUBMENU(subMenuMidiendoyFotosCte),
+     SUBMENU(subMenuToggleMedirCte),
      FIELD(fuerzaInicialCte, "Fuerza:", "N", 0, 200, 5, 1, doNothing,
            enterEvent, noStyle),
-     altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 1, 5,
+     altFIELD(decPlaces<1>::menuField, largo, "Largo:", "mm", 0, 20, 1, 0.5,
               doNothing, noEvent, noStyle),
      FIELD(velocidad, "Velocidad:", "mm/s", 0, 200, 10, 1, doNothing, noEvent,
            noStyle),
@@ -395,7 +406,7 @@ MENU(subMenuMedirCte, "Medir F constante", doNothing, noEvent, wrapStyle,
 MENU(subMenuCalibrarPID, "PID", doNothing, noEvent, wrapStyle,
      // SUBMENU(subMenuToggleCalibrarPID),
      // SUBMENU(subMenuGridSearch),
-     // SUBMENU(subMenuToggleMapear),
+     SUBMENU(subMenuToggleMapear),
      // SUBMENU(subMenuToggleMedir),
      SUBMENU(subMenuMedir), //
      altFIELD(decPlaces<3>::menuField, Kp, "Proporcional:", "", -5, 5, 0.01,
@@ -541,6 +552,9 @@ void setup() {
   fuerzaPID.SetMode(0);
   updateLargo();
   // emergencyStopIsActive = false;
+  Serial.println(factor);
+  Serial.println(factor_um);
+  Serial.println(factor_t);
 }
 
 void loop() {
@@ -552,6 +566,7 @@ void loop() {
   if (now - lastMenuFrame >= menuFPS) {
     if (calibrarCelda) {
       reading = leerCelda();
+      debugln(reading);
     }
     lastMenuFrame = millis();
     nav.poll();
@@ -636,6 +651,11 @@ void moverMuestra() {
   stepperX->stopMove();
 }
 
+result medirMenuCte() {
+  constante = 1;
+  return medirMenu();
+}
+
 result medirMenu() {
   // nav.doOutput();
   debugln("nav doOutput");
@@ -702,8 +722,8 @@ result mapear() {
     unsigned long current_time = millis();
     monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time,
              stepperX->getCurrentPosition(), stepperY->getCurrentPosition(),
-             step2mm(stepperX->getCurrentPosition()),
-             step2mm(stepperY->getCurrentPosition()), altura);
+             step2um(stepperX->getCurrentPosition()),
+             step2um(stepperY->getCurrentPosition()), altura);
   }
 
   int m = 0;
@@ -723,8 +743,8 @@ result mapear() {
     unsigned long current_time = millis();
     monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time,
              stepperX->getCurrentPosition(), stepperY->getCurrentPosition(),
-             step2mm(stepperX->getCurrentPosition()),
-             step2mm(stepperY->getCurrentPosition()), altura);
+             step2um(stepperX->getCurrentPosition()),
+             step2um(stepperY->getCurrentPosition()), altura);
     m++;
   }
 
@@ -742,8 +762,8 @@ result mapear() {
     unsigned long current_time = millis();
     monitorf("%d\t%d\t%d\t%f\t%f\t%f\n", current_time,
              stepperX->getCurrentPosition(), stepperY->getCurrentPosition(),
-             step2mm(stepperX->getCurrentPosition()),
-             step2mm(stepperY->getCurrentPosition()), altura);
+             step2um(stepperX->getCurrentPosition()),
+             step2um(stepperY->getCurrentPosition()), altura);
   }
 
   if (not(stepperX->isRunning())) {
@@ -839,7 +859,6 @@ bool medir() {
   fuerzaInicial = constante ? fuerzaInicialCte : fuerzaInicialDin;
 
   fuerzaSetpoint = fuerzaInicial * 1000;
-  // fuerzaSetpoint = -100 + fuerzaInicial * 1000;
 
   // paso a una vel de acercamiento proporcional a la raiz de la fuerza
   // inicial. uso un parametro que lo deje igual a como era antes para 5N
@@ -851,7 +870,6 @@ bool medir() {
   // valor en miliNewton
   int fuerzaFinalM = fuerzaFinal * 1000;
   int fuerzaInicialM = fuerzaInicial * 1000;
-  // int fuerzaInicialM = -100 + fuerzaInicial * 1000;
 
   int deltaF = fuerzaFinal - fuerzaInicial;
   int deltaFM = fuerzaFinalM - fuerzaInicialM;
@@ -862,7 +880,7 @@ bool medir() {
 
   int errAbs = 0;
 
-  fuerzaPID.SetOutputLimits(-500, 500);
+  fuerzaPID.SetOutputLimits(-500, 1600);
   fuerzaPID.SetSampleTime(80);
 
   unsigned long current_time = millis();
@@ -875,7 +893,7 @@ bool medir() {
   monitorf("#%d,%d,%f,%d,%f,%f,%f\n", fuerzaInicial, fuerzaFinal, largo,
            velocidad, Kp, Ki, Kd);
 
-  // luego siguen el siguiente orden
+  // luego siguen en el siguiente orden
   debugln("t, x, y, fIn, fSet, fOut, errAbs");
 
   stepperX->setCurrentPosition(0);
@@ -889,44 +907,33 @@ bool medir() {
       break;
     }
     monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", millis(),
-             step2mm(stepperX->getCurrentPosition()),
-             step2mm(stepperY->getCurrentPosition()), fuerzaInput,
+             step2um(stepperX->getCurrentPosition()),
+             step2um(stepperY->getCurrentPosition()), fuerzaInput,
              fuerzaSetpoint, fuerzaOutput, errAbs);
   }
 
   // set el cero para que la punta quede `separacion` arriba  de la muestra
-  // stepperY->setCurrentPosition(mm2step(separacion));
   stepperY->forceStopAndNewPosition(mm2step(separacion));
 
-  // float TOLmod = 100 + (TOL * deltaF / 5);
-
   ////// ESTABILIZACION //////
+  fuerzaOutput = 200;
+  fuerzaPID.SetMode(AUTOMATIC);
 
   // anuncio las etapas: 0 = Estabilizacion, 1 = Acercamiento
   monitorln("#0,0,0,0,0,0,0");
   progressBar('e', .0);
 
-  stepperY->setAcceleration(accelerationX * 20);
-  debugf("speed pid %f, speed/4 %f\n", speed, speed / 4);
-  stepperY->setSpeedInHz(speed / 4);
+  float TOLmod = (TOL * deltaF / 5);
+  stepperY->setAcceleration(accelerationX);
+  stepperY->setSpeedInHz(speed / 2);
   stepperY->runForward();
-  fuerzaOutput = 0;
-  fuerzaPID.SetMode(AUTOMATIC);
-  fuerzaPID.SetTunings(0.1 * fuerzaInicial / 5., 0.08, 0.0);
 
   while (digitalRead(joySW)) {
-    // if (emergencyStopCheck()) {
-    //   debugln("emergencyStop en Estabilizacion");
-    //   return proceed;
-    // }
     fuerzaInput = scale.get_units(numSamples);
-    fuerzaPID.Compute();
-    stepperY->setSpeedInHz((uint32_t)fuerzaOutput);
-    stepperY->runForward();
 
     error = fuerzaSetpoint - fuerzaInput;
-    // if (error < TOLmod - 500 || fuerzaInput > fuerzaSetpoint * 1.1) {
-    if (fuerzaInput > fuerzaSetpoint * 0.95) {
+    if (error < TOLmod || fuerzaInput > fuerzaSetpoint * 1.1) {
+      debugf("estabilizo a %f\n", fuerzaInput);
       stepperY->forceStop();
       break;
     }
@@ -936,8 +943,8 @@ bool medir() {
       errAbs += abs(error) / 10;
 
       monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", current_time,
-               step2mm(stepperX->getCurrentPosition()),
-               step2mm(stepperY->getCurrentPosition()), fuerzaInput,
+               step2um(stepperX->getCurrentPosition()),
+               step2um(stepperY->getCurrentPosition()), fuerzaInput,
                fuerzaSetpoint, fuerzaOutput, errAbs);
       last_input_time = current_time;
     }
@@ -952,13 +959,14 @@ bool medir() {
   fuerzaPID.SetTunings(Kp, Ki, Kd);
   progressBar('s', .0);
   int stepperXPos = 0;
+  stepperY->setSpeedInHz(speed);
   stepperX->setSpeedInHz(mmxm2stepxs(velocidad));
   stepperX->move(largoSteps);
 
   while ((digitalRead(joySW)) and (stepperX->isRunning())) {
     stepperXPos = stepperX->getCurrentPosition();
     ratio = stepperXPos / largoSteps;
-    ratioOpt = constante ? 0 : ratio;
+    ratioOpt = constante ? 0.0 : ratio;
     fuerzaSetpoint = fuerzaInicialM + (deltaFM * ratioOpt);
 
     current_time = millis();
@@ -984,7 +992,7 @@ bool medir() {
       // };
       errAbs += abs(error) / 10.;
       monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n", current_time,
-               step2mm(stepperXPos), step2mm(stepperY->getCurrentPosition()),
+               step2um(stepperXPos), step2um(stepperY->getCurrentPosition()),
                fuerzaInput, fuerzaSetpoint, fuerzaOutput, errAbs);
       last_input_time = current_time;
     }
@@ -998,54 +1006,34 @@ bool medir() {
   bool canceled = false;
 
   if (stepperX->isRunning()) {
+    debugln("X is running, canceled");
     canceled = true;
   };
 
-  stepperX->stopMove();
-  stepperY->stopMove();
-  // espero a que la cola de los motores se limpie
-  // stepperY->runBackward();
-  // delay(100);
-
-  // if (not(stepperX->isRunning())) {
-  //   toggleDummy = 0;
-  //   constante = 0;
-  // }
-
-  debugln("t, x, y, fIn, fSet, fOut, errAbs");
-
-  // debugf("running? X %d, Y %d\n", stepperX->isRunning(),
-  // stepperY->isRunning()); debugf("entries? X %d, Y %d\n",
-  // stepperX->queueEntries(),
-  //        stepperY->queueEntries());
+  stepperX->forceStop();
+  stepperY->forceStop();
+  // espero a que la cola de los motores se limpie, si no completa el movimiento
+  // en X antes de hacer cualquier otra cosa
+  delay(100);
 
   // sacar la punta y volver al origen:
-  debugf("acc Y: %d ", stepperY->setAcceleration(4 * accelerationX));
-  // debugf("speed Y: %d ", stepperY->setSpeedInHz(2 * maxSpeedX));
+  stepperY->setAcceleration(4 * accelerationX);
   stepperX->setSpeedInHz(2 * maxSpeedX);
   stepperY->setSpeedInHz(2 * maxSpeedX);
-  // debugf("X:%d\n", stepperX->setSpeedInHz(2 * maxSpeedX));
 
-  // // si la fuerza al final de la raya fue alta, retroceder la punta un poco
-  // // para para que no salte al retirarla
+  // si la fuerza al final de la raya fue alta, retroceder la punta un poco
+  // para para que no salte al retirarla
   if (fuerzaInput > 10000) {
     debugln("retreat");
-    debugf("X retreat = %d, dist = %d\n",
-           stepperX->move(-1 * direccionRayado * mm2step(0.1), true),
-           mm2step(0.1));
+    stepperX->move(-1 * direccionRayado * mm2step(0.1), true);
   }
 
   stepperY->moveTo(0, true);
   stepperX->moveTo(0);
-  // debugf("reset Y: %d ", stepperY->moveTo(0, true));
-  // debugf("X:%d\n", stepperX->moveTo(0));
-  // monitorf("#%d,%.3f,%.3f,%.0f,%.0f,%.0f,%d\n",
-  // current_time,
-  //          step2mm(stepperX->getCurrentPosition()),
-  //          step2mm(stepperY->getCurrentPosition()), fuerzaInput,
-  //          fuerzaSetpoint, fuerzaOutput, errAbs);
+
   fuerzaOutput = 0.;
   medicionCompletada = true;
+  constante = 0;
   return canceled;
 }
 
@@ -1193,7 +1181,7 @@ result calibrarPID() {
   }
 
   fuerzaPID.SetMode(AUTOMATIC);
-  fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
+  // fuerzaPID.SetOutputLimits(-maxSpeedX, maxSpeedX);
   fuerzaPID.SetSampleTime(50);
 
   stepperY->setSpeedInHz(maxSpeedX * fuerzaFinal / 20);
@@ -1337,7 +1325,7 @@ void initPreferences() {
   } else {
 
     // prefs.putInt("fInicialDin", fuerzaInicialDin);
-    // prefs.putInt("fInicialCte", fuerzaInicialCte);
+    prefs.putFloat("CALI", CALIBRATION_FACTOR);
     Kp = prefs.getDouble("Kp");
     Ki = prefs.getDouble("Ki");
     Kd = prefs.getDouble("Kd");
