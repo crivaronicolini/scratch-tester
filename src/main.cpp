@@ -97,12 +97,8 @@ const colorDef<uint16_t> colors[6] MEMMODE = {
 #define SCK 25
 
 // params celda
-// 500g
-// #define CALIBRATION_FACTOR 50100
-// 100g
-// #define CALIBRATION_FACTOR 10297
-// 1000g
-float CALIBRATION_FACTOR = -101.805;
+// factor crudo = 102.01401412240335 divido por g=9.8066 para tener N
+float CALIBRATION_FACTOR = 10.40258745;
 long reading = -1;
 int numSamples = 1;
 bool calibrarCelda = false;
@@ -534,7 +530,7 @@ void setup() {
 
   scale.begin(load, SCK);
   if (scale.wait_ready_retry(3, 500)) {
-    scale.set_scale(CALIBRATION_FACTOR / 9.8066);
+    scale.set_scale(CALIBRATION_FACTOR);
     debugln("Tare... remove any weights from the scale.");
     scale.tare(20);
     debugln("Tare done...");
